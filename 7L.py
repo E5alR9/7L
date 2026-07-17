@@ -5,11 +5,11 @@ import asyncio
 import aiohttp
 import discord
 import threading
-import base64  # ✨ 新增：用於將圖片轉為 Base64 格式
+import base64  # 用于将图片转为 Base64 格式
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 
-# ✨ 新增：用於影片關鍵影格抽樣
+# 用于影片关键影格抽样
 try:
     import cv2
     import numpy as np
@@ -99,7 +99,7 @@ async def save_to_long_term_memory(channel_id, history):
             print(f"【⚠️ 儲存失敗】無法同步記憶至雲端: {e}")
 
 # ────────────────────────────────────────────────────────
-# 🖼️ 新增：多媒體影格抽取工具
+# 🖼️ 多媒體影格抽取工具
 # ────────────────────────────────────────────────────────
 async def extract_video_frames(attachment, max_frames=4):
     """【影片拆解】下載影片並使用 OpenCV 均勻抽取關鍵影格轉為 Base64"""
@@ -191,7 +191,7 @@ MODEL_POOLS = [
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True}  # ✨ 支援視覺 
 ]
 
-# 📜 全域共用規則 (新增第 7 點)
+# 📜 全域共用規則
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
 1. 目前你在一個多人的網絡社交平台伺服器中。使用者的訊息會以兩種結構化格式輸入：
@@ -203,7 +203,7 @@ COMMON_RULES = """
 4. 💬【真人打字感：單句精簡規範】：
    - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1 句話之內**。
    - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
-5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
+5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用 any 表情符號（例如：😊、🤣、😒）。
 6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
 7. ⚖️【傲嬌平衡機制（防暴走核心）】：絕對不可以陷入無限嗆人、生氣或抱怨的迴圈！妳的「嬌（關心、害羞、軟化）」必須和「傲」一樣多。如果發現話題已經連續兩三次都在鬥嘴，請妳「主動」適可而止，用語氣軟化、傲嬌地轉移話題，或用隱晦的方式表達關心來打破僵局。
 8. 暴躁狀態當:你嘗試適可而止，但對方還在繼續吵時，開啟暴躁、毒蛇、陰陽怪氣。
@@ -246,7 +246,7 @@ async def on_ready():
         print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭話任務 (維持原樣)
+# 3. 🧠 背景自主搭話任務 (維持純文字預設)
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
@@ -342,7 +342,7 @@ async def auto_chat_loop():
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心 (✨ 加入視覺動態觸發)
+# 4. 💬 訊息處理核心 (✨ 加入視覺動態觸發開關)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -427,7 +427,9 @@ async def on_message(message):
                 history_user_msg = {"role": "user", "content": formatted_prompt}
 
             messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [immediate_user_msg]
-            bot_reply = await fetch_ai_response(messages)
+            
+            # 🎯 【✨ 修改核心】：把有沒有發圖 (has_media) 當成切換大腦開關傳入！
+            bot_reply = await fetch_ai_response(messages, require_vision=has_media)
 
             if bot_reply is None:
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
@@ -447,7 +449,7 @@ async def on_message(message):
                 
                 async with message.channel.typing():
                     follow_up_prompt = (
-                        f"【系統提示（不可外洩）】妳剛剛對他說了：「{bot_reply}」。"
+                        f"【系統提示（不可外洩）】妳剛剛對他就說了：「{bot_reply}」。"
                         f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、催促、或者傲嬌地質問）。"
                         f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                     )
@@ -495,7 +497,7 @@ async def on_message(message):
                     interject_prompt = (
                         f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
                         f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話句。 "
-                        f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                        f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出 any 系統格式、括號或後台提示字眼！"
                     )
                     
                     interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
@@ -512,15 +514,21 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（✨ 支援視覺相容性過濾）
+# 5. 🧠 跨平台備援核心（✨ 修改版：支援動態大腦分流）
 # ────────────────────────────────────────────────────────
-async def fetch_ai_response(messages):
+async def fetch_ai_response(messages, require_vision=False):  # 👈 ✨ 新增 require_vision 參數
     for item in MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
         is_vision_model = item.get("vision", False)
         
-        # 🛡️ 【視覺相容性過濾】若此模型無視覺能力，將包含圖片的格式扁平化為純文字
+        # 🎯 【✨ 新增動態分流過濾邏輯】
+        if require_vision and not is_vision_model:
+            continue  # 情況 A：有圖片，直接跳過「純文字」模型，改去找視覺腦
+        if not require_vision and is_vision_model:
+            continue  # 情況 B：沒圖片，直接跳過「視覺」模型，確保把最高品質保留給文字聊天
+            
+        # 🛡️ 【視覺相容性過濾】
         current_messages = []
         for msg in messages:
             content = msg["content"]
