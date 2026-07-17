@@ -147,6 +147,7 @@ async def extract_video_frames(attachment, max_frames=4):
 # ────────────────────────────────────────────────────────
 # 🧠 豪華跨平台備用大腦池 (加入了 Vision 標記)
 # ────────────────────────────────────────────────────────
+
 MODEL_POOLS = [
     # 🌟 第一梯隊：頂級旗艦大腦
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        
@@ -156,47 +157,27 @@ MODEL_POOLS = [
     {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
     {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # ✨ 支援視覺                            
     {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-70b-versatile"},                        
     {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   
-    {"provider": "groq", "client": ai_client_1, "model": "llama3-70b-8192"},                                
-    {"provider": "groq", "client": ai_client_2, "model": "llama3-70b-8192"},                                
-    {"provider": "groq", "client": ai_client_3, "model": "llama3-70b-8192"},                                
-    {"provider": "groq", "client": ai_client_4, "model": "llama3-70b-8192"},                                
 
-    # 💎 第二梯隊
+    # 💎 第二梯隊：中型主力大腦
     {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          
-    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                              
-    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                              
-    {"provider": "groq", "client": ai_client_3, "model": "mixtral-8x7b-32768"},                              
-    {"provider": "groq", "client": ai_client_4, "model": "mixtral-8x7b-32768"},                              
     {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
 
-    # ⚡ 第三梯隊
+    # ⚡ 第三梯隊：輕量高速度 / 視覺備援
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                
-    {"provider": "groq", "client": ai_client_1, "model": "gemma2-9b-it"},                                    
-    {"provider": "groq", "client": ai_client_2, "model": "gemma2-9b-it"},                                    
     {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                            
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                            
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                            
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"},                            
     {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       
-    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                  
 
-    # 🛡️ 第四梯隊
+    # 🛡️ 第四梯隊：極速墊底防線
     {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                            
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                            
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-3b-preview"},                            
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-3b-preview"},                            
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True} 
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-3b-preview"}
 ]
 
 # 📜 全域共用規則
