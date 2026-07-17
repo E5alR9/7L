@@ -287,7 +287,7 @@ async def auto_chat_loop():
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心（✨雙軌海馬迴記憶機制✨）
+# 4. 💬 訊息處理核心（✨雙軌海馬迴記憶機制 + 隨機插話功能✨）
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -346,13 +346,13 @@ async def on_message(message):
             if len(history) > 50: history = history[-50:]
             HIPPOCAMPUS_CACHE[channel_id] = history
 
-            # 👉 【關鍵改動】用背景任務存雲端，完美避開雲端網路延遲！
+            # 👉 用背景任務存雲端，完美避開雲端網路延遲！
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
             # 發送第一句話
             await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-            # 3️⃣ 🧠 真人連發第二句機制 (隨機 40% 機率連發)
+            # 3️⃣ 🧠 真人連發第二句機制 (隨機機率連發)
             if random.random() < 0.7:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 
@@ -364,11 +364,9 @@ async def on_message(message):
                     )
                     
                     # 🔮 【第二軌：機率性調用雲端】
-                    # 在連發第二句時，有 50% 機率強制去雲端資料庫刷新記憶，模擬深層回想
                     if random.random() < 0.5:
                         print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
                         history = await fetch_from_long_term_memory(channel_id)
-                        # 將雲端撈到的最新進度與剛才的第一句融合
                         if not history or history[-1].get("content") != bot_reply:
                             history = HIPPOCAMPUS_CACHE[channel_id]
                     else:
@@ -388,7 +386,7 @@ async def on_message(message):
                         await asyncio.sleep(0.5)
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
 
-    # ─── ✨ 情況 B：純群聊旁聽 ───
+    # ─── ✨ 情況 B：純群聊旁聽（🔥 新增隨機插話機制） ───
     else:
         if message.content.strip():
             formatted_bypass = (
@@ -400,8 +398,38 @@ async def on_message(message):
             if len(history) > 50: history = history[-50:]
             HIPPOCAMPUS_CACHE[channel_id] = history
             
-            # 旁聽儲存也是丟背景背景同步，絕對不卡群聊節奏
+            # 旁聽儲存也是丟背景同步，絕對不卡群聊節奏
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
+
+            # 🎲 【自訂插話率】0.15 代表有 15% 的機率在別人在聊天時主動插嘴
+            INTERRUPT_CHANCE = 0.45 
+            
+            if random.random() < INTERRUPT_CHANCE:
+                # 模擬人類「讀完訊息、思考一陣子」才打字的真實感（延遲 1.5 ~ 3.5 秒）
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+                
+                async with message.channel.typing():
+                    interject_prompt = (
+                        f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
+                        f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話一句。 "
+                        f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                    )
+                    
+                    # 融合當前記憶，讓大腦分析後回話
+                    interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
+                    bot_reply = await fetch_ai_response(interject_messages)
+                    
+                    if bot_reply:
+                        # 將 7L 插話的內容塞回海馬迴
+                        history.append({"role": "assistant", "content": bot_reply})
+                        if len(history) > 50: history = history[-50:]
+                        HIPPOCAMPUS_CACHE[channel_id] = history
+                        
+                        # 丟背景存入 MongoDB
+                        asyncio.create_task(save_to_long_term_memory(channel_id, history))
+                        
+                        # 發送訊息到群組
+                        await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
 
     await bot.process_commands(message)
     
