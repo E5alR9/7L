@@ -1,4 +1,4 @@
 discord.py
 groq
 aiohttp
-pip install firebase-admin
+firebase-admin
