@@ -2,3 +2,4 @@ discord.py
 groq
 aiohttp
 firebase-admin
+duckduckgo_search
