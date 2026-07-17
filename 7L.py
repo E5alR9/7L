@@ -17,8 +17,8 @@ GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")  # 👈 帳號 B
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# 這裡填寫你要她主動 @ 誰的「Discord 數字 ID」
-PING_TARGETS = [1364675732256854160] 
+# 💡 這裡設為空列表。改由下方自動任務「動態掃描頻道歷史」來抓取真正聊過天的活人！
+PING_TARGETS = [] 
 # 如果有指定頻道，填入頻道 ID；若設為 None，她會隨機挑一個能發言的頻道
 AUTONOMOUS_CHANNEL_ID = None 
 
@@ -86,8 +86,9 @@ MODEL_POOLS = [
 # ────────────────────────────────────────────────────────
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
-1. 目前你在一個多人的網絡社交平台伺服器中。使用者的訊息會以結構化格式輸入：
-   【發訊人資訊】顯示暱稱：[對方的名字] | 帳號ID：[防偽帳號] | 標記此人的代碼：[標記代碼]
+1. 目前你在一個多人的網絡社交平台伺服器中。使用者的訊息會以兩種結構化格式輸入：
+   - 情況 A（點名妳）：【對妳發言】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
+   - 情況 B（旁聽聊天）：【群聊旁聽】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
    訊息內容：「[訊息]」
 2. 請務必根據「帳號ID」來確認對方的真實身分與關係。
 3. ❌【嚴格禁止】❌：在任何情況下，嚴禁將括號內的「ID（帳號名稱）」直接當成名字唸出來！妳只能叫對方的「顯示暱稱」或上述指定的稱呼。
@@ -95,10 +96,10 @@ COMMON_RULES = """
    - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1 句話之內**。
    - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
 5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
-6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
+6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ decorate對方。
 
 🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
-- ❌ 絕對禁止在妳的回答中印出「【發訊人資訊】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
+- ❌ 絕對禁止在妳的回答中印出「【對妳發言】」、「【群聊旁聽】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
 - ❌ 絕對禁止模仿使用者的輸入格式！
 - 請一律使用「純繁體中文」回答。
 - 請把對話框那端的大家都當成「真實存在的人」。嚴禁在括號的動作或心理活動中提到任何科技、系統、後台詞彙！
@@ -138,7 +139,7 @@ async def on_ready():
         print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭話任務 (每 30 分鐘觸發 - 頻道與目標雙重記憶版)
+# 3. 🧠 背景自主搭話任務 (每 30 分鐘觸發 - 真正動態活人掃描版)
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
@@ -167,7 +168,7 @@ async def auto_chat_loop():
         channel = random.choice(valid_channels)
         print(f"【🧠 自主選擇】成功從記憶中挑選了最近互動過的頻道：{channel.name} ({channel.id})")
     
-    # 2. 🚨 安全後備網：如果完全沒有最近記憶（例如機器人剛重啟、記憶體被清空時）
+    # 2. 🚨 安全後備網：如果完全沒有最近記憶
     else:
         all_valid_channels = []
         for guild in bot.guilds:
@@ -180,42 +181,52 @@ async def auto_chat_loop():
     if not channel:
         return
 
-    # 🎯 核心改良二：從該頻道的歷史紀錄中，找出最近跟她聊過天的人
+    # 🎯 核心修改點二：優先從後台「旁聽記憶」或歷史紀錄中，找出最近講話的活人
     lucky_user_id = None
     channel_id = channel.id
+    active_users = []
 
+    # 先從動態旁聽記憶庫裡撈人
     if channel_id in conversation_history and conversation_history[channel_id]:
-        active_users = []
         for msg in conversation_history[channel_id]:
             if msg["role"] == "user":
-                # 從【發訊人資訊】中精準抓取類似 <@123456789> 的 Discord ID 數字
                 found_ids = re.findall(r'<@(\d+)>', msg["content"])
                 for uid in found_ids:
                     active_users.append(int(uid))
-        
-        # 如果有成功抓到最近聊過天的人，就從裡面隨機挑一個當幸運兒！
-        if active_users:
-            lucky_user_id = random.choice(active_users)
-            print(f"【🧠 自主目標】成功從對話紀錄中抓到最近互動的使用者 ID：{lucky_user_id}")
 
-    # 🚨 安全後備網：如果該頻道剛好沒記憶（或重啟後全空），就使用你最上方設定的 PING_TARGETS
-    if not lucky_user_id:
-        if PING_TARGETS:
-            lucky_user_id = random.choice(PING_TARGETS)
-            print(f"【🧠 目標備援】目前暫無互動記憶，使用預設的後備 PING_TARGETS：{lucky_user_id}")
-        else:
-            # 如果連後備設定都沒有，就直接結束，避免報錯
-            print("【🚨 失敗】找不到任何可以 @ 的目標使用者，取消本次自主發言。")
-            return
+    # 如果記憶庫剛好空的，去翻真實歷史
+    if not active_users:
+        try:
+            async for msg in channel.history(limit=30):
+                if not msg.author.bot:
+                    if msg.author.id not in active_users:
+                        active_users.append(msg.author.id)
+        except Exception as e:
+            print(f"【⚠️ 失敗】無法讀取頻道 {channel.name} 的歷史紀錄: {e}")
 
-    user_mention = f"<@{lucky_user_id}>"
-    
+    # 如果有成功抓到最近聊過天的人，隨機挑一個
+    if active_users:
+        lucky_user_id = random.choice(active_users)
+        print(f"【🧠 自主目標】成功抓到活躍使用者 ID：{lucky_user_id}")
+    elif PING_TARGETS:
+        lucky_user_id = random.choice(PING_TARGETS)
+        print(f"【🧠 目標備援】頻道最近無人發言，使用預設的後備 PING_TARGETS：{lucky_user_id}")
+
     async with channel.typing():
-        autonomous_prompt = (
-            f"【系統事件（不可對外洩漏）】妳現在在群組裡覺得有點無聊，想找 {user_mention} 聊天。 "
-            f"請根據妳傲嬌的性格，主動向他搭話、分享心情或鬥嘴。 "
-            f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
-        )
+        if lucky_user_id:
+            user_mention = f"<@{lucky_user_id}>"
+            autonomous_prompt = (
+                f"【系統事件（不可對外洩漏）】妳現在在群組裡看到大家在聊天覺得有點手癢，想找 {user_mention} 說話。 "
+                f"請根據妳傲嬌的性格，切入剛才的群聊話題主動向他搭話、分享心情或鬥嘴。 "
+                f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
+            )
+        else:
+            user_mention = ""
+            autonomous_prompt = (
+                f"【系統事件（不可對外洩漏）】妳現在在群組裡覺得有點無聊，想在頻道裡發發牢騷。 "
+                f"請根據妳傲嬌的性格，主動分享心情、吐槽或碎碎念。 "
+                f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
+            )
 
         if channel_id not in conversation_history:
             conversation_history[channel_id] = []
@@ -225,25 +236,34 @@ async def auto_chat_loop():
         bot_reply = await fetch_ai_response(messages)
 
         if bot_reply:
-            conversation_history[channel_id].append({"role": "user", "content": f"【妳主動搭話】對 {user_mention} 說話"})
+            log_content = f"【妳主動搭話】對 {user_mention} 說話" if lucky_user_id else "【妳主動發言】自言自語"
+            conversation_history[channel_id].append({"role": "user", "content": log_content})
             conversation_history[channel_id].append({"role": "assistant", "content": bot_reply})
             if len(conversation_history[channel_id]) > 50:
                 conversation_history[channel_id] = conversation_history[channel_id][-50:]
 
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
-            print("【🧠 自主成功】主動標記發言成功！")
+            print("【🧠 自主成功】自主模式發言成功！")
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 一般訊息回覆處理 (真人動態連發版)
+# 4. 💬 訊息處理核心 (✨全新升級：融入群聊環境主動旁聽記憶機制✨)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
+    # 排除自己發的，或是 mention everyone 的訊息
     if message.author == bot.user or message.mention_everyone:
         return
+
+    channel_id = message.channel.id
+    
+    # 確保記憶字典有初始化
+    if channel_id not in conversation_history:
+        conversation_history[channel_id] = []
 
     should_trigger = False
     user_prompt = ""
 
+    # 判斷這則訊息是不是在回覆 Bot
     is_reply_to_bot = (message.reference and isinstance(message.reference.resolved, discord.Message) 
                        and message.reference.resolved.author == bot.user)
 
@@ -254,25 +274,24 @@ async def on_message(message):
         should_trigger = True
         user_prompt = message.content.strip()
 
+    # 提取發訊人的基本資料
+    user_nick = message.author.display_name
+    user_id_name = message.author.name
+    user_mention_code = f"<@{message.author.id}>"
+
+    # ─── 情況 A：有人標記或回覆 Bot ───
     if should_trigger:
         if not user_prompt:
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
         async with message.channel.typing():
-            channel_id = message.channel.id
-            user_nick = message.author.display_name
-            user_id_name = message.author.name
-            user_mention_code = f"<@{message.author.id}>"
-            
+            # 格式化為「對妳發言」，存入對話記憶
             formatted_prompt = (
-                f"【發訊人資訊】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
+                f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
                 f"訊息內容：「{user_prompt}」"
             )
 
-            if channel_id not in conversation_history:
-                conversation_history[channel_id] = []
-            
             history = conversation_history[channel_id]
             messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": formatted_prompt}]
 
@@ -283,7 +302,7 @@ async def on_message(message):
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
-            # 將第一句存入對話記憶
+            # 將第一句存入對話記憶 (同時包含對方的對妳發言提示)
             conversation_history[channel_id].append({"role": "user", "content": formatted_prompt})
             conversation_history[channel_id].append({"role": "assistant", "content": bot_reply})
             if len(conversation_history[channel_id]) > 50:
@@ -292,24 +311,18 @@ async def on_message(message):
             # 2️⃣ 用「回覆 (Reply)」的方式發送第一句話
             await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-            # 3️⃣ 🧠 真人連發第二句核心機制 (隨機機率，這裡設定 40% 機率會連發)
-            # 如果你想讓她更常連發，可以把 0.4 改成 0.5 (50%) 或 0.6 (60%)
+            # 3️⃣ 🧠 真人連發第二句核心機制 (隨機 40% 機率會連發)
             if random.random() < 0.4:
-                
-                # 模擬真人「頓一下、正在打字」的等待時間 (隨機 1.5 ~ 3.0 秒)
+                # 模擬真人正在打字的時間 (隨機 1.5 ~ 3.0 秒)
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 
-                # 在 Discord 頻道顯示「7L 正在輸入...」
                 async with message.channel.typing():
-                    
-                    # 💡 給 AI 的秘密後台提示：告訴她她剛說了什麼，並要她傲嬌地「追加」一句話
                     follow_up_prompt = (
                         f"【系統提示（不可外洩）】妳剛剛對他說了：「{bot_reply}」。"
-                        f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、溫馨叮嚀、催促、或者傲嬌地質問）。"
+                        f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、催促、或者傲嬌地質問）。"
                         f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                     )
                     
-                    # 把新的追加提示當作 user 的輸入，結合之前的歷史紀錄
                     updated_history = conversation_history[channel_id]
                     second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + updated_history + [{"role": "user", "content": follow_up_prompt}]
                     
@@ -317,16 +330,29 @@ async def on_message(message):
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
-                        # 將第二句也存入歷史紀錄 (只存 AI 的回覆，不存系統提示)
+                        # 將第二句也存入歷史紀錄
                         conversation_history[channel_id].append({"role": "assistant", "content": second_reply})
                         if len(conversation_history[channel_id]) > 50:
                             conversation_history[channel_id] = conversation_history[channel_id][-50:]
                         
-                        # 稍微等個 0.5 秒讓打字動態收尾，感覺更逼真
                         await asyncio.sleep(0.5)
-                        
-                        # 用「一般發送 (Send)」發出第二句，這樣在頻道裡看起來就像真人洗板連發一樣！
+                        # 用一般發送追加第二句話
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
+
+    # ─── ✨ 情況 B：純群聊旁聽（此版本核心改良精髓！） ───
+    else:
+        # 如果別人在聊天室講話、但沒有標記 Bot 時，Bot 會默默記下他們的對話當作背景環境記憶
+        if message.content.strip():
+            formatted_bypass = (
+                f"【群聊旁聽】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
+                f"訊息內容：「{message.content.strip()}」"
+            )
+            # 悄悄存入該頻道的歷史記憶庫，提供 AI 未來的上下文語境
+            conversation_history[channel_id].append({"role": "user", "content": formatted_bypass})
+            
+            # 控制記憶庫上限 50 筆，防記憶體溢出
+            if len(conversation_history[channel_id]) > 50:
+                conversation_history[channel_id] = conversation_history[channel_id][-50:]
 
     await bot.process_commands(message)
     
@@ -339,9 +365,7 @@ async def fetch_ai_response(messages):
         model_name = item["model"]
         try:
             if provider == "groq":
-                # 💡 關鍵改動：從目前輪到的項目中，動態取出綁定的 Client (A帳號或B帳號)
                 target_client = item.get("client")
-                
                 if not target_client:
                     print(f"【⚠️ 跳過】Groq 模型 {model_name} 缺少對應的金鑰環境變數")
                     continue
@@ -377,10 +401,11 @@ async def fetch_ai_response(messages):
                             
         except Exception as e:
             print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
-            await asyncio.sleep(1)  # 💡 增加 1 秒緩衝，防止網路瞬間抽搐時連鎖秒退
+            await asyncio.sleep(1)
             continue
             
     return None
+
 # ────────────────────────────────────────────────────────
 # 🌐 6. 騙 Render 檢查的「虛擬網頁」與啟動區塊
 # ────────────────────────────────────────────────────────
@@ -392,7 +417,6 @@ class DummyServer(BaseHTTPRequestHandler):
         self.wfile.write(b"All Miku & Sisters Bots are alive!")
 
     def log_message(self, format, *args):
-        # 隱藏伺服器的連線日誌，避免刷頻
         return
 
 def run_backup_server():
@@ -401,13 +425,11 @@ def run_backup_server():
     server.serve_forever()
 
 if __name__ == "__main__":
-    # 建立一個背景執行緒來跑 Dummy Server
     server_thread = threading.Thread(target=run_backup_server)
-    server_thread.daemon = True # 當主程式關閉時，這個執行緒也會跟著關閉
+    server_thread.daemon = True
     server_thread.start()
     print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動 (準備接客 Ping)！")
 
-    # 啟動 Discord 機器人 (主執行緒)
     if DISCORD_TOKEN:
         bot.run(DISCORD_TOKEN)
     else:
