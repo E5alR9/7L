@@ -20,13 +20,19 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定
+# 1. 🔑 金鑰與基礎設定 (✨ 已全面擴充至 10 組 Groq API)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")
 GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")
 GROQ_API_KEY_3 = os.getenv("GROQ_API_KEY_3")
 GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")
+GROQ_API_KEY_5 = os.getenv("GROQ_API_KEY_5")
+GROQ_API_KEY_6 = os.getenv("GROQ_API_KEY_6")
+GROQ_API_KEY_7 = os.getenv("GROQ_API_KEY_7")
+GROQ_API_KEY_8 = os.getenv("GROQ_API_KEY_8")
+GROQ_API_KEY_9 = os.getenv("GROQ_API_KEY_9")
+GROQ_API_KEY_10 = os.getenv("GROQ_API_KEY_10")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -36,18 +42,22 @@ FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 PING_TARGETS = [] 
 AUTONOMOUS_CHANNEL_ID = None 
 
-# 初始化 Groq 區塊
+# 初始化 Groq 區塊 (高達 10 組客戶端矩陣，完美分流防禦 429)
 try:
     from groq import AsyncGroq
     ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
     ai_client_2 = AsyncGroq(api_key=GROQ_API_KEY_2) if GROQ_API_KEY_2 else None
     ai_client_3 = AsyncGroq(api_key=GROQ_API_KEY_3) if GROQ_API_KEY_3 else None
     ai_client_4 = AsyncGroq(api_key=GROQ_API_KEY_4) if GROQ_API_KEY_4 else None
+    ai_client_5 = AsyncGroq(api_key=GROQ_API_KEY_5) if GROQ_API_KEY_5 else None
+    ai_client_6 = AsyncGroq(api_key=GROQ_API_KEY_6) if GROQ_API_KEY_6 else None
+    ai_client_7 = AsyncGroq(api_key=GROQ_API_KEY_7) if GROQ_API_KEY_7 else None
+    ai_client_8 = AsyncGroq(api_key=GROQ_API_KEY_8) if GROQ_API_KEY_8 else None
+    ai_client_9 = AsyncGroq(api_key=GROQ_API_KEY_9) if GROQ_API_KEY_9 else None
+    ai_client_10 = AsyncGroq(api_key=GROQ_API_KEY_10) if GROQ_API_KEY_10 else None
 except ImportError:
-    ai_client_1 = None
-    ai_client_2 = None
-    ai_client_3 = None
-    ai_client_4 = None
+    ai_client_1 = ai_client_2 = ai_client_3 = ai_client_4 = ai_client_5 = None
+    ai_client_6 = ai_client_7 = ai_client_8 = ai_client_9 = ai_client_10 = None
     pass
 
 # 🧠 【雙軌架構】動態海馬回快取 (Short-term / RAM)
@@ -64,10 +74,8 @@ except ImportError:
 db = None
 if HAS_FIREBASE and FIREBASE_CRED_JSON:
     try:
-        # 將字串轉回 JSON 字典
         cred_dict = json.loads(FIREBASE_CRED_JSON)
         cred = credentials.Certificate(cred_dict)
-        # 初始化 Firebase (如果還沒初始化過)
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
         db = firestore_async.client()
@@ -84,7 +92,6 @@ else:
 async def fetch_from_long_term_memory(channel_id):
     if db is not None:
         try:
-            # 取得 channel_history 集合中對應頻道 ID 的文件
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
@@ -100,7 +107,6 @@ async def save_to_long_term_memory(channel_id, history):
         
     if db is not None:
         try:
-            # 將紀錄寫入 Firestore (若無則新增，若有則覆蓋 history 欄位)
             doc_ref = db.collection("channel_history").document(str(channel_id))
             await doc_ref.set({"history": history}, merge=True)
             print(f"【💾 記憶鞏固】頻道 {channel_id} 的記憶已成功同步至 Firebase 雲端長存區。")
@@ -146,33 +152,57 @@ async def extract_video_frames(attachment, max_frames=4):
         return []
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪華跨平台備用大腦池 (加入了 Vision 標記)
+# 🧠 豪華跨平台備用大腦池 (✨ 10金鑰全面解禁與分流排列)
 # ────────────────────────────────────────────────────────
-
 MODEL_POOLS = [
-    # 🌟 第一梯隊：頂級旗艦大腦 (大參數 / 強推理 / 全數在線)
+    # 🌟 第一梯隊：頂級旗艦大腦 (大參數 / 強推理 / 10 Key 矩陣全數在線)
+    {"provider": "groq", "client": ai_client_10, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_9, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_8, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_7, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_6, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_5, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-120b"},  # 🚀 新上架 120B 頂級旗艦
+    
+    # 🚀 120B 頂級旗艦防線
+    {"provider": "groq", "client": ai_client_10, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_9, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_8, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_7, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_6, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_5, "model": "openai/gpt-oss-120b"},                        
+    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-120b"},                        
     {"provider": "groq", "client": ai_client_3, "model": "openai/gpt-oss-120b"},                        
     {"provider": "groq", "client": ai_client_2, "model": "openai/gpt-oss-120b"},                        
     {"provider": "groq", "client": ai_client_1, "model": "openai/gpt-oss-120b"},                        
+    
+    # 外部備援大腦
     {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
     {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
-    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # ✨ 支援視覺                            
+    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # 🖼️ 專職看圖/影片
+    {"provider": "gemini", "model": "gemini-1.5-flash"},                # 💬 解封：兼職純文字最後大後盾
 
-    # 💎 第二梯隊：中堅主力大腦 (高速度 / 優秀效能)
-    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-20b"},   # ⚡ 1000 tps 超高速模型
+    # 💎 第二梯隊：中堅主力大腦 (高速度 / 優秀效能 / 10 Key 均勻覆蓋)
+    {"provider": "groq", "client": ai_client_10, "model": "openai/gpt-oss-20b"},   # ⚡ 1000 tps 超高速
+    {"provider": "groq", "client": ai_client_9, "model": "openai/gpt-oss-20b"},                        
+    {"provider": "groq", "client": ai_client_8, "model": "openai/gpt-oss-20b"},                        
+    {"provider": "groq", "client": ai_client_7, "model": "openai/gpt-oss-20b"},                        
+    {"provider": "groq", "client": ai_client_6, "model": "openai/gpt-oss-20b"},                        
+    {"provider": "groq", "client": ai_client_5, "model": "openai/gpt-oss-20b"},                        
+    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-20b"},                        
     {"provider": "groq", "client": ai_client_3, "model": "openai/gpt-oss-20b"},                        
     {"provider": "groq", "client": ai_client_2, "model": "openai/gpt-oss-20b"},                        
     {"provider": "groq", "client": ai_client_1, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3-32b"},        # 🔮 全新 Qwen3 預覽
+    
+    # 🔮 全新 Qwen3 與 Qwen3.6 預覽防線
+    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3-32b"},                        
     {"provider": "groq", "client": ai_client_3, "model": "qwen/qwen3-32b"},                        
     {"provider": "groq", "client": ai_client_2, "model": "qwen/qwen3-32b"},                        
     {"provider": "groq", "client": ai_client_1, "model": "qwen/qwen3-32b"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3.6-27b"},      # 🔮 全新 Qwen3.6 預覽
+    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3.6-27b"},                      
     {"provider": "groq", "client": ai_client_3, "model": "qwen/qwen3.6-27b"},                        
     {"provider": "groq", "client": ai_client_2, "model": "qwen/qwen3.6-27b"},                        
     {"provider": "groq", "client": ai_client_1, "model": "qwen/qwen3.6-27b"},                        
@@ -180,11 +210,11 @@ MODEL_POOLS = [
     {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
 
     # ⚡ 第三梯隊：高效能輕量 / 次世代預覽
-    {"provider": "groq", "client": ai_client_4, "model": "meta-llama/llama-4-scout-17b-16e-instruct"}, # 🏹 Llama 4 搶先預覽版 (750 tps)
+    {"provider": "groq", "client": ai_client_4, "model": "meta-llama/llama-4-scout-17b-16e-instruct"}, # 🏹 Llama 4 搶先版 (750 tps)
     {"provider": "groq", "client": ai_client_3, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
     {"provider": "groq", "client": ai_client_2, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
     {"provider": "groq", "client": ai_client_1, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"}, # 🥦 官方認證穩定生產版
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"}, # 🥦 穩定生產版
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                        
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                        
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                        
@@ -195,7 +225,6 @@ MODEL_POOLS = [
     # 🛡️ 第四梯隊：輕量級防線 / 備用應急
     {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"}   
 ]
-
 # 📜 全域共用規則
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
@@ -566,12 +595,15 @@ async def fetch_ai_response(messages, require_vision=False):
         print(f"【⚠️ 時間時區注入失敗】: {e}，將使用預設無時間模式。")
     # ─────────────────────────────────────
 
-    # ⚠️ 以下維持你原本的模型輪詢與分流邏輯不變
     for item in MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
         is_vision_model = item.get("vision", False)
         
+        # 🎯 檢查點 1：最前端防線！如果是 groq 平台，但該金鑰位子沒填（client 為 None），直接跳過！
+        if provider == "groq" and item.get("client") is None:
+            continue
+
         if require_vision and not is_vision_model:
             continue  
         if not require_vision and is_vision_model:
@@ -594,8 +626,6 @@ async def fetch_ai_response(messages, require_vision=False):
         try:
             if provider == "groq":
                 target_client = item.get("client")
-                if not target_client: continue
-                    
                 print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
                 chat_completion = await target_client.chat.completions.create(
                     messages=current_messages, model=model_name
@@ -625,9 +655,12 @@ async def fetch_ai_response(messages, require_vision=False):
                             return data["choices"][0]["message"]["content"]
                             
         except Exception as e:
-            print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
+            # 🎯 檢查點 2：抓到任何錯誤（包含 429 Rate Limit）默默印出並換下一桶水
+            print(f"【⚠️ 備援觸發】{provider} 的 {model_name} 呼叫失敗: {e}。正在切換至下一個備用腦...")
             continue
-    return None
+
+    # 🎯 終極防線：如果 10 把金鑰 + 所有備援池都繞完了全滅，讓 7L 自帶傲嬌語氣回應，而不是噴 None
+    return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我三十秒好不好？"
 
 # ────────────────────────────────────────────────────────
 # 🌐 網路聯想探針（免金鑰搜尋工具）
