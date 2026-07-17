@@ -14,9 +14,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # 這裡填寫你要她主動 @ 誰的「Discord 數字 ID」
-PING_TARGETS = [1234567890123456] 
+PING_TARGETS = [1364675732256854160] 
 # 如果有指定頻道，填入頻道 ID；若設為 None，她會隨機挑一個能發言的頻道
-AUTONOMOUS_CHANNEL_ID = None 
+AUTONOMOUS_CHANNEL_ID = 1519364216333533256 
 
 try:
     from groq import AsyncGroq
