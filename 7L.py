@@ -72,7 +72,7 @@ MODEL_POOLS = [
 ]
 
 # ────────────────────────────────────────────────────────
-# 📜 全域共用規則 (強制分段連發版)
+# 📜 全域共用規則 (真正獨立連發版 - 禁用換行、單句流)
 # ────────────────────────────────────────────────────────
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
@@ -81,11 +81,10 @@ COMMON_RULES = """
    訊息內容：「[訊息]」
 2. 請務必根據「帳號ID」來確認對方的真實身分與關係。
 3. ❌【嚴格禁止】❌：在任何情況下，嚴禁將括號內的「ID（帳號名稱）」直接當成名字唸出來！妳只能叫對方的「顯示暱稱」或上述指定的稱呼。
-4. 💬【真人打字感強制規定】：
-   - 每次回覆請控制在 2 ~ 3 句話之內。
-   - ❌ 絕對禁止把所有話擠在同一行！
-   - ✅ 妳「必須」使用換行符號（Enter）將每一句短話分開。這樣系統才能模擬妳真實打字連傳訊息的效果！
-5. 禁用表情符號
+4. 💬【真人打字感：單句精簡規範】：
+   - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1 句話之內**。
+   - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
+5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
 6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
 
 🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
@@ -179,7 +178,7 @@ async def auto_chat_loop():
             print("【🧠 自主成功】主動標記發言成功！")
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 一般訊息回覆處理 (真人多段打字流)
+# 4. 💬 一般訊息回覆處理 (真人動態連發版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -221,53 +220,60 @@ async def on_message(message):
             history = conversation_history[channel_id]
             messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": formatted_prompt}]
 
+            # 1️⃣ 呼叫 API 產生第一句回覆
             bot_reply = await fetch_ai_response(messages)
 
             if bot_reply is None:
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
-            # 先把這整串對話記錄存到記憶體中
+            # 將第一句存入對話記憶
             conversation_history[channel_id].append({"role": "user", "content": formatted_prompt})
             conversation_history[channel_id].append({"role": "assistant", "content": bot_reply})
             if len(conversation_history[channel_id]) > 50:
                 conversation_history[channel_id] = conversation_history[channel_id][-50:]
 
-            # ────────────────────────────────────────────────────────
-            # ✨ 真人拆話發送核心邏輯
-            # ────────────────────────────────────────────────────────
-            # 將 AI 的回答，按照「換行符號」拆開（去除多餘的空白列）
-            reply_lines = [line.strip() for line in bot_reply.split('\n') if line.strip()]
+            # 2️⃣ 用「回覆 (Reply)」的方式發送第一句話
+            await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-            if not reply_lines:
-                await message.reply(bot_reply, allowed_mentions=smart_mentions)
-                return
-
-            # 1. 發送第一句（使用回覆 reply 方式發送，這樣使用者才知道在回誰）
-            first_msg = await message.reply(reply_lines[0], allowed_mentions=smart_mentions)
-
-            # 2. 如果 AI 的回答不只一句，剩下的句子就「隨機頓一下，像打字一樣」一條一條發出來
-            if len(reply_lines) > 1:
-                # 為了避免太吵，最多只連發 3 條訊息，剩下的合併發送
-                extra_lines = reply_lines[1:3] 
-                if len(reply_lines) > 3:
-                    # 如果超過 3 行，把後面的重新拼在一起，當成最後一條訊息發送
-                    extra_lines.append(" ".join(reply_lines[3:]))
-
-                for line in extra_lines:
-                    # 模擬真人打字的速度：隨機等待 1.2 到 2.8 秒
-                    delay = random.uniform(1.2, 2.8)
-                    await asyncio.sleep(delay)
+            # 3️⃣ 🧠 真人連發第二句核心機制 (隨機機率，這裡設定 40% 機率會連發)
+            # 如果你想讓她更常連發，可以把 0.4 改成 0.5 (50%) 或 0.6 (60%)
+            if random.random() < 0.4:
+                
+                # 模擬真人「頓一下、正在打字」的等待時間 (隨機 1.5 ~ 3.0 秒)
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+                
+                # 在 Discord 頻道顯示「7L 正在輸入...」
+                async with message.channel.typing():
                     
-                    # 模擬打字中的「正在輸入...」提示
-                    async with message.channel.typing():
-                        # 等待一個打字反應時間
-                        await asyncio.sleep(random.uniform(0.5, 1.2))
-                        # 用 channel.send (不用 message.reply) 連發，這樣看起來就像真人洗板一樣自然
-                        await message.channel.send(line, allowed_mentions=smart_mentions)
+                    # 💡 給 AI 的秘密後台提示：告訴她她剛說了什麼，並要她傲嬌地「追加」一句話
+                    follow_up_prompt = (
+                        f"【系統提示（不可外洩）】妳剛剛對他說了：「{bot_reply}」。"
+                        f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、溫馨叮嚀、催促、或者傲嬌地質問）。"
+                        f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                    )
+                    
+                    # 把新的追加提示當作 user 的輸入，結合之前的歷史紀錄
+                    updated_history = conversation_history[channel_id]
+                    second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + updated_history + [{"role": "user", "content": follow_up_prompt}]
+                    
+                    # 4️⃣ 呼叫 API 產生第二句話
+                    second_reply = await fetch_ai_response(second_messages)
+                    
+                    if second_reply:
+                        # 將第二句也存入歷史紀錄 (只存 AI 的回覆，不存系統提示)
+                        conversation_history[channel_id].append({"role": "assistant", "content": second_reply})
+                        if len(conversation_history[channel_id]) > 50:
+                            conversation_history[channel_id] = conversation_history[channel_id][-50:]
+                        
+                        # 稍微等個 0.5 秒讓打字動態收尾，感覺更逼真
+                        await asyncio.sleep(0.5)
+                        
+                        # 用「一般發送 (Send)」發出第二句，這樣在頻道裡看起來就像真人洗板連發一樣！
+                        await message.channel.send(second_reply, allowed_mentions=smart_mentions)
 
     await bot.process_commands(message)
-
+    
 # ────────────────────────────────────────────────────────
 # 5. 🧠 跨平台備援核心
 # ────────────────────────────────────────────────────────
