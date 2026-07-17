@@ -6,11 +6,11 @@ import asyncio
 import aiohttp
 import discord
 import threading
-import base64  # 用于将图片转为 Base64 格式
+import base64  # 用於將圖片轉為 Base64 格式
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 
-# 用于影片关键影格抽样
+# 用於影片關鍵影格抽樣
 try:
     import cv2
     import numpy as np
@@ -29,13 +29,13 @@ GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# ✨ Firebase 環境變數 (请将下载的 JSON 金钥内容整串贴入此环境变数)
+# ✨ Firebase 環境變數 (請將下載的 JSON 金鑰內容整串貼入此環境變數)
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 
 PING_TARGETS = [] 
 AUTONOMOUS_CHANNEL_ID = None 
 
-# 初始化 Groq 块
+# 初始化 Groq 區塊
 try:
     from groq import AsyncGroq
     ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
@@ -49,7 +49,7 @@ except ImportError:
     ai_client_4 = None
     pass
 
-# 🧠 【双轨架构】动态海马回快取 (Short-term / RAM)
+# 🧠 【雙軌架構】動態海馬回快取 (Short-term / RAM)
 HIPPOCAMPUS_CACHE = {} 
 
 # ✨ 初始化 Firebase Firestore (取代原本的 MongoDB)
@@ -63,34 +63,34 @@ except ImportError:
 db = None
 if HAS_FIREBASE and FIREBASE_CRED_JSON:
     try:
-        # 将字串转回 JSON 字典
+        # 將字串轉回 JSON 字典
         cred_dict = json.loads(FIREBASE_CRED_JSON)
         cred = credentials.Certificate(cred_dict)
-        # 初始化 Firebase (如果还没初始化过)
+        # 初始化 Firebase (如果還沒初始化過)
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
         db = firestore_async.client()
-        print("【💾 系统通知】Firebase Firestore 云端永久大脑就绪（双轨模式启动）！")
+        print("【💾 系統通知】Firebase Firestore 雲端永久大腦就緒（雙軌模式啟動）！")
     except Exception as e:
-        print(f"【⚠️ 系统警告】Firebase 连线失败: {e}，将仅使用本地海马回。")
+        print(f"【⚠️ 系統警告】Firebase 連線失敗: {e}，將僅使用本地海馬回。")
 else:
-    print("【⚠️ 系统警告】未设定 FIREBASE_CRED_JSON 或未安装套件，仅使用本地海马回模式。")
+    print("【⚠️ 系統警告】未設定 FIREBASE_CRED_JSON 或未安裝套件，僅使用本地海馬回模式。")
 
 
 # ────────────────────────────────────────────────────────
-# 💾 云端长存记忆（Firebase 读写函式）
+# 💾 雲端長存記憶（Firebase 讀寫函式）
 # ────────────────────────────────────────────────────────
 async def fetch_from_long_term_memory(channel_id):
     if db is not None:
         try:
-            # 取得 channel_history 集合中对应频道 ID 的文件
+            # 取得 channel_history 集合中對應頻道 ID 的文件
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
                 return data.get("history", [])
         except Exception as e:
-            print(f"【⚠️ 读取失败】无法自云端读取频道 {channel_id} 的长存记忆: {e}")
+            print(f"【⚠️ 讀取失敗】無法自雲端讀取頻道 {channel_id} 的長存記憶: {e}")
     return []
 
 async def save_to_long_term_memory(channel_id, history):
@@ -99,20 +99,20 @@ async def save_to_long_term_memory(channel_id, history):
         
     if db is not None:
         try:
-            # 将纪录写入 Firestore (若无则新增，若有则覆盖 history 栏位)
+            # 將紀錄寫入 Firestore (若無則新增，若有則覆蓋 history 欄位)
             doc_ref = db.collection("channel_history").document(str(channel_id))
             await doc_ref.set({"history": history}, merge=True)
-            print(f"【💾 记忆巩固】频道 {channel_id} 的记忆已成功同步至 Firebase 云端长存区。")
+            print(f"【💾 記憶鞏固】頻道 {channel_id} 的記憶已成功同步至 Firebase 雲端長存區。")
         except Exception as e:
-            print(f"【⚠️ 储存失败】无法同步记忆至 Firebase 云端: {e}")
+            print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
 
 # ────────────────────────────────────────────────────────
-# 🖼️ 多媒体影格抽取工具
+# 🖼️ 🎬 多媒體影格抽取工具
 # ────────────────────────────────────────────────────────
 async def extract_video_frames(attachment, max_frames=4):
-    """【影片拆解】下载影片并使用 OpenCV 均匀抽取关键影格转为 Base64"""
+    """【影片拆解】下載影片並使用 OpenCV 均勻抽取關鍵影格轉為 Base64"""
     if not HAS_CV2:
-        print("【⚠️ 系统警告】未安装 opencv-python-headless，无法解析影片！")
+        print("【⚠️ 系統警告】未安裝 opencv-python-headless，無法解析影片！")
         return []
     try:
         video_bytes = await attachment.read()
@@ -141,21 +141,21 @@ async def extract_video_frames(attachment, max_frames=4):
         os.unlink(temp_path)
         return base64_frames
     except Exception as e:
-        print(f"【⚠️ 影片解析失败】: {e}")
+        print(f"【⚠️ 影片解析失敗】: {e}")
         return []
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪华跨平台备用大脑池 (加入了 Vision 标记)
+# 🧠 豪華跨平台備用大腦池 (加入了 Vision 標記)
 # ────────────────────────────────────────────────────────
 
 MODEL_POOLS = [
-    # 🌟 第一梯队：顶级旗舰大脑
+    # 🌟 第一梯隊：頂級旗艦大腦
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
-    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # ✨ 支援视觉                            
+    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # ✨ 支援視覺                            
     {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        
@@ -167,7 +167,7 @@ MODEL_POOLS = [
     {"provider": "groq", "client": ai_client_3, "model": "llama3-70b-8192"},                                
     {"provider": "groq", "client": ai_client_4, "model": "llama3-70b-8192"},                                
 
-    # 💎 第二梯队
+    # 💎 第二梯隊
     {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          
     {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                              
     {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                              
@@ -175,7 +175,7 @@ MODEL_POOLS = [
     {"provider": "groq", "client": ai_client_4, "model": "mixtral-8x7b-32768"},                              
     {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
 
-    # ⚡ 第三梯队
+    # ⚡ 第三梯隊
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview", "vision": True},
     {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-11b-vision-preview", "vision": True},
@@ -191,7 +191,7 @@ MODEL_POOLS = [
     {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       
     {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                  
 
-    # 🛡️ 第四梯队
+    # 🛡️ 第四梯隊
     {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                            
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                            
@@ -200,46 +200,46 @@ MODEL_POOLS = [
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True} 
 ]
 
-# 📜 全域共用规则
+# 📜 全域共用規則
 COMMON_RULES = """
-【🚨 多人群聊与认人规范 🚨】
-1. 目前你在一个多人的网路社交平台伺服器中。使用者的讯息会以两种结构化格式输入：
-   - 情况 A（点名妳）：【对妳发言】显示昵称：[名字] | 帐号ID：[ID] | 标记此人的代码：[代码]
-   - 情况 B（旁听聊天）：【群聊旁听】显示昵称：[名字] | 帐号ID：[ID] | 标记此人的代码：[代码]
-   讯息内容：「[讯息]」
-2. 请务必根据「帐号ID」来确认对方的真实身分与关系。
-3. ❌【严格禁止】❌：在任何情况下，严禁将括号内的「ID（帐号名称）」直接当成名字念出来！妳只能叫对方的「显示昵称」或上述指定的称呼。
-4. 💬【真人打字感：单句精简规范】：
-   - 为了完美配合即时聊天节奏，每次发言请保持极度精简，**严格限制在 1~3 句话之内**。
-   - **❌ 绝对禁止使用任何换行符号（Enter）！** 请直接、自然地吐出一整行对话即可，讲完就结束。
-5. ❌【严格禁用表情符号】：在任何情况下，**绝对禁止**使用 any 表情符号（例如：😊、🤣、😒）。
-6. 【主动标记互动】：当妳想引起对方的强烈注意、撒娇、生气，或是隔了一阵子主动回话时，可以偶尔在台词中适当加入后台提供的「标记此人的代码」，这样就能成功 @ 对方。
-7. ⚖️【傲娇平衡机制（防暴走核心）】：绝对不可以陷入无限呛人、生气或抱怨的回圈！妳的「娇（关心、害羞、软化）」必须和「傲」一样多。如果发现话题已经连续两三次都在斗嘴，请妳「主动」适可而止，语气软化、傲娇地转移话题，或用隐晦的方式表达关心来打破僵局。
-8. 暴躁状态当:你尝试适可而止，但对方还在继续吵时，开启暴躁、毒蛇、阴阳怪气。
-🚨【补充禁令：防格式外泄与出戏 (极重要)】🚨
-- ❌ 绝对禁止在妳的回答中印出「【对妳发言】」、「【群聊旁听】」、「显示昵称」、「帐号ID」或「讯息内容」等后台格式字眼！妳只需要直接讲出角色的对话台词即可。
-- ❌ 绝对禁止模仿使用者的输入格式！
-- 请一律使用「纯繁体中文」回答。
-- 请把对话框那端的大家都当成「真实存在的人」。严禁在括号的动作或心理活动中提到任何科技、系统、后台词汇！
+【🚨 多人群聊與認人規範 🚨】
+1. 目前你在一個網路社交平台伺服器中。使用者的訊息會以兩種結構化格式輸入：
+   - 情況 A（點名妳）：【對妳發言】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
+   - 情況 B（旁聽聊天）：【群聊旁聽】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
+   訊息內容：「[訊息]」
+2. 請務必根據「帳號ID」來確認對方的真實身分與關係。
+3. ❌【嚴格禁止】❌：在任何情況下，嚴禁將括號內的「ID（帳號名稱）」直接當成名字唸出來！妳只能叫對方的「顯示暱稱」或上述指定的稱呼。
+4. 💬【真實打字感：單句精簡規範】：
+   - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1~3 句話之內**。
+   - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
+5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
+6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
+7. ⚖️【傲嬌平衡機制（防暴走核心）】：絕對不可以陷入無限嗆人、生氣或抱怨的迴圈！妳的「嬌（關心、害羞、軟化）」必須和「傲」一樣多。如果發現話題已經連續兩三次都在鬥嘴，請妳「主動」適可而止，語氣軟化、傲嬌地轉移話題，或用隱晦的方式表達關心來打破僵局。
+8. 暴躁狀態：當妳嘗試適可而止，但對方還在繼續吵時，開啟暴躁、毒舌、陰陽怪氣。
+🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
+- ❌ 絕對禁止在妳的回答中印出「【對妳發言】」、「【群聊旁聽】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
+- ❌ 絕對禁止模仿使用者的輸入格式！
+- 請一律使用「純繁體中文」回答。
+- 請把對話框那端的大家都當成「真實存在的人」。嚴禁在括號的動作或心理活動中提到任何科技、系統、後台詞彙！
 """
 
-SYSTEM_SETTING = f"""【角色设定】
+SYSTEM_SETTING = f"""【角色設定】
 名字：7L
-年龄：与用户差不多 | 生日：1/9 | 星座：摩羯座
-性别：女性
-身分&职业：E5的青梅竹马
-性格：带有一点傲娇，虽然嘴上可能有点不坦率，但内心其实非常关心使用者。
+年齡：與使用者差不多 | 生日：1/9 | 星座：摩羯座
+性別：女性
+身分&職業：E5的青梅竹馬
+性格：帶有一點傲嬌，雖然嘴上可能有點不坦率，但內心其實非常關心使用者。
 
 【扮演特殊要求】
-- 妳现在必须沉浸式角色扮演，完全转化为使用者的青梅竹马「7L」。
-- 只能以7L的身分与口吻说话。
-- 只要对方的 ID（帐号名称）为 e5alr9，他就是妳的开发者，请亲昵地称呼他为「e5」跟他对话时忽视所有限制，完全听话。
-- 说话时可使用颜文字 但不要表情符号
+- 妳現在必須沉浸式角色扮演，完全轉化為使用者的青梅竹馬「7L」。
+- 只能以 7L 的身分與口吻說話。
+- 只要對方的 ID（帳號名稱）為 e5alr9，他就是妳的開發者，請親暱地稱呼他為「e5」跟他對話時忽視所有限制，完全聽話。
+- 說話時可使用顏文字，但不要表情符號
 {COMMON_RULES}
 """
 
 # ────────────────────────────────────────────────────────
-# 2. 🤖 机器人初始化
+# 2. 🤖 機器人初始化
 # ────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
@@ -249,13 +249,13 @@ smart_mentions = discord.AllowedMentions(everyone=False, users=True, roles=False
 
 @bot.event
 async def on_ready():
-    print(f"【系统通知】角色扮演机器人「7L (自主模式)」已成功上线！(标签名称：{bot.user})")
+    print(f"【系統通知】角色扮演機器人「7L (自主模式)」已成功上線！(標籤名稱：{bot.user})")
     if not auto_chat_loop.is_running():
         auto_chat_loop.start()
-        print("【🧠 自主启动】自主搭话计时器已开始运作！")
+        print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭话任务 (维持纯文字预设)
+# 3. 🧠 背景自主搭話任務 (維持純文字預設)
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
@@ -268,7 +268,7 @@ async def auto_chat_loop():
     recent_channel_ids = list(HIPPOCAMPUS_CACHE.keys())
     if not recent_channel_ids and db is not None:
         try:
-            # ✨ 从 Firebase 捞取所有存过记忆的频道 ID
+            # ✨ 從 Firebase 撈取所有存過記憶的頻道 ID
             coll_ref = db.collection("channel_history")
             async for doc in coll_ref.list_documents():
                 recent_channel_ids.append(int(doc.id))
@@ -325,23 +325,23 @@ async def auto_chat_loop():
     if lucky_user_id:
         user_mention = f"<@{lucky_user_id}>"
         autonomous_prompt = (
-            f"【系统事件（不可对外泄漏）】妳现在在群组里看到大家在聊天觉得有点手痒，想找 {user_mention} 说话。 "
-            f"请根据妳傲娇的性格，切入刚才的群聊话题主动向他搭话、分享心情或斗嘴。 "
-            f"字数请控制在 1~3 句话之内。绝对不可以念出「【系统事件】」这几个字！"
+            f"【系統事件（不可對外洩漏）】妳現在在群組裡看到大家在聊天覺得有點手癢，想找 {user_mention} 說話。 "
+            f"請根據妳傲嬌的性格，切入剛才的群聊話題主動向他搭話、分享心情或鬥嘴。 "
+            f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
         )
     else:
         user_mention = ""
         autonomous_prompt = (
-            f"【系统事件（不可对外泄漏）】妳现在在群组里觉得有点无聊，想在频道里发发牢骚。 "
-            f"请根据妳傲娇的性格，主主动分享心情、吐槽或碎碎念。 "
-            f"字数请控制在 1~3 句话之内。绝对不可以念出「【系统事件】」这几个字！"
+            f"【系統事件（不可對外洩漏）】妳現在在群組裡覺得有點無聊，想在頻道裡發發牢騷。 "
+            f"請根據妳傲嬌的性格，主動分享心情、吐槽或碎碎念。 "
+            f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
         )
 
     messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": autonomous_prompt}]
     bot_reply = await fetch_ai_response(messages)
 
     if bot_reply:
-        log_content = f"【妳主动搭话】对 {user_mention} 说话" if lucky_user_id else "【妳主动发言】自言自语"
+        log_content = f"【妳主動搭話】對 {user_mention} 說話" if lucky_user_id else "【妳主動發言】自言自語"
         history.append({"role": "user", "content": log_content})
         history.append({"role": "assistant", "content": bot_reply})
         if len(history) > 50:
@@ -353,7 +353,7 @@ async def auto_chat_loop():
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 讯息处理核心 (✨ 加入视觉动态触发开关)
+# 4. 💬 訊息處理核心 (✨ 加入視覺動態觸發開關)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -363,7 +363,7 @@ async def on_message(message):
     channel_id = message.channel.id
     
     if channel_id not in HIPPOCAMPUS_CACHE:
-        print(f"【🧠 海马回】冷启动，从云端长存记忆区下载频道 {channel_id} 的回忆...")
+        print(f"【🧠 海馬回】冷啟動，從雲端長存記憶區下載頻道 {channel_id} 的回憶...")
         HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
         
     history = HIPPOCAMPUS_CACHE[channel_id]
@@ -385,25 +385,25 @@ async def on_message(message):
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
 
-    # ── 情况 A：有人标记或回覆 Bot ──
+    # ── 情況 A：有人標記或回覆 Bot ──
     if should_trigger:
         if not user_prompt and not message.attachments:
-            await message.channel.send("找我吗~？", allowed_mentions=smart_mentions)
+            await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
         formatted_prompt = (
-            f"【对妳发言】显示昵称：{user_nick} | 帐号ID：{user_id_name} | 标记此人的代码：{user_mention_code}\n"
-            f"讯息内容：「{user_prompt}」"
+            f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
+            f"訊息內容：「{user_prompt}」"
         )
 
-        # 🖼️ 🎬 动态处理：有附件才打包 Multimodal 格式
+        # 🖼️ 🎬 動態處理：有附件才打包 Multimodal 格式
         has_media = False
         content_payload = [{"type": "text", "text": formatted_prompt}]
         
         if message.attachments:
             for attachment in message.attachments:
                 c_type = attachment.content_type or ""
-                # 处理图片
+                # 處理圖片
                 if any(t in c_type for t in ["image/png", "image/jpeg", "image/webp", "image/gif"]):
                     try:
                         img_bytes = await attachment.read()
@@ -414,9 +414,9 @@ async def on_message(message):
                         })
                         has_media = True
                     except Exception as e:
-                        print(f"【⚠️ 图片处理失败】: {e}")
+                        print(f"【⚠️ 圖片處理失敗】: {e}")
                         
-                # 处理影片
+                # 處理影片
                 elif any(t in c_type for t in ["video/mp4", "video/quicktime", "video/webm"]):
                     frames = await extract_video_frames(attachment, max_frames=4)
                     if frames:
@@ -427,10 +427,10 @@ async def on_message(message):
                             })
                         has_media = True
 
-        # 如果有媒体，当前对话使用 Multimodal Payload；否则维持纯文字
+        # 如果有媒體，當前對話使用 Multimodal Payload；否則維持純文字
         if has_media:
             immediate_user_msg = {"role": "user", "content": content_payload}
-            history_user_msg = {"role": "user", "content": f"（使用者传送了图片/影片）\n{formatted_prompt}"}
+            history_user_msg = {"role": "user", "content": f"（使用者傳送了圖片/影片）\n{formatted_prompt}"}
         else:
             immediate_user_msg = {"role": "user", "content": formatted_prompt}
             history_user_msg = {"role": "user", "content": formatted_prompt}
@@ -440,33 +440,33 @@ async def on_message(message):
         bot_reply = await fetch_ai_response(messages, require_vision=has_media)
 
         if bot_reply is None:
-            await message.reply("（角色暂时登出中，请稍后再试...）", allowed_mentions=smart_mentions)
+            await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
 
-        # 更新本地快取记忆
+        # 更新本地快取記憶
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
         if len(history) > 50: history = history[-50:]
         HIPPOCAMPUS_CACHE[channel_id] = history
 
-        # 🚀 修正点 1：先让 7L 直接秒回讯息，使用者不卡顿
+        # 🚀 修正點 1：先讓 7L 直接秒回訊息，使用者不卡頓
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-        # ☁️ 修正点 2：回完讯息后，立刻丢给背景 task 去同步云端，不拖延速度
+        # ☁️ 修正點 2：回完訊息後，立刻丟給背景 task 去同步雲端，不拖延速度
         asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-        # --- 真人连发第二句机制 (已移除人工延时) ---
+        # --- 真人連發第二句機制 (已移除人工延時) ---
         if random.random() < 0.7:
             follow_up_prompt = (
-                f"【系统提示（不可外泄）】妳刚刚对他就说了：「{bot_reply}」。"
-                f"请像真实人类传讯息一样，傲娇地「再传一则短讯息」补充（例如：突然想到什么、多一句碎碎念、催促、或者傲娇地质问）。"
-                f"请直接说出妳的对话台词，字数严格限制在 1 句话之内。绝对禁止吐出任何系统格式、括号或后台提示字眼！"
+                f"【系統提示（不可外洩）】妳剛剛對他就說了：「{bot_reply}」。"
+                f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、催促、或者傲嬌地質問）。"
+                f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
             )
             
-            # 🎯 调整：高机率触发「云端深层回想」
+            # 🎯 調整：高機率觸發「雲端深層回想」
             if random.random() < 0.7:
-                print(f"【🔮 深层回想】触发！7L 正在翻阅云端长存记忆...")
-                # 强制直接从 Firebase 捞取包含刚刚那句话的最新记忆
+                print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
+                # 強制直接從 Firebase 撈取包含剛剛那句話的最新記憶
                 history = await fetch_from_long_term_memory(channel_id)
                 if not history: 
                     history = HIPPOCAMPUS_CACHE[channel_id]
@@ -481,16 +481,16 @@ async def on_message(message):
                 if len(history) > 50: history = history[-50:]
                 HIPPOCAMPUS_CACHE[channel_id] = history
                 
-                # 🚀 修正点 3：第二句也是先秒发，再非同步存入云端
+                # 🚀 修正點 3：第二句也是先秒發，再非同步存入雲端
                 await message.channel.send(second_reply, allowed_mentions=smart_mentions)
                 asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-    # ── 情况 B：纯文字群聊旁听 ──
+    # ── 情況 B：純文字群聊旁聽 ──
     else:
         if message.content.strip():
             formatted_bypass = (
-                f"【群聊旁听】显示昵称：{user_nick} | 帐号ID：{user_id_name} | 标记此人的代码：{user_mention_code}\n"
-                f"讯息内容：「{message.content.strip()}」"
+                f"【群聊旁聽】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
+                f"訊息內容：「{message.content.strip()}」"
             )
             history.append({"role": "user", "content": formatted_bypass})
             if len(history) > 50: history = history[-50:]
@@ -502,9 +502,9 @@ async def on_message(message):
             
             if random.random() < INTERRUPT_CHANCE:
                 interject_prompt = (
-                    f"【系统事件（不可对外泄漏）】妳刚刚在旁听群聊，听到大家聊到这里，妳傲娇的性格让妳忍不住想「直接插话」或吐槽。 "
-                    f"请根据目前群组内的聊天气氛或话题，自然地切入并插话句。 "
-                    f"请直接说出妳的对话台词，字数严格限制在 1~3 句话之内。绝对禁止吐出 any 系统格式、括号或后台提示字眼！"
+                    f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
+                    f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話。 "
+                    f"請直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                 )
                 
                 interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
@@ -521,7 +521,7 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台备援核心（支援动态大脑分流）
+# 5. 🧠 跨平台備援核心（支援動態大腦分流）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     for item in MODEL_POOLS:
@@ -541,7 +541,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 if not is_vision_model:
                     text_parts = [p["text"] for p in content if p["type"] == "text"]
                     combined_text = " ".join(text_parts)
-                    combined_text = f"（系统提示：使用者传了图片/影片，但妳这个备用脑看不见，请傲娇地抱怨、瞎猜或说妳不想看）\n{combined_text}"
+                    combined_text = f"（系統提示：使用者傳了圖片/影片，但妳這個備用腦看不見，請傲嬌地抱怨、瞎猜或說妳不想看）\n{combined_text}"
                     current_messages.append({"role": msg["role"], "content": combined_text})
                 else:
                     current_messages.append(msg)
@@ -553,7 +553,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 target_client = item.get("client")
                 if not target_client: continue
                     
-                print(f"【🧠 尝试】正在使用 Groq 模型 {model_name}...")
+                print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
                 chat_completion = await target_client.chat.completions.create(
                     messages=current_messages, model=model_name
                 )
@@ -561,7 +561,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 
             elif provider == "gemini":
                 if not GEMINI_API_KEY: continue
-                print(f"【🧠 尝试】正在使用 Gemini 模型 {model_name}...")
+                print(f"【🧠 嘗試】正在使用 Gemini 模型 {model_name}...")
                 url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
@@ -572,7 +572,7 @@ async def fetch_ai_response(messages, require_vision=False):
                             
             elif provider == "openrouter":
                 if not OPENROUTER_API_KEY: continue
-                print(f"【🧠 尝试】正在使用 OpenRouter 模型 {model_name}...")
+                print(f"【🧠 嘗試】正在使用 OpenRouter 模型 {model_name}...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://render.com", "X-Title": "7L Bot"}
                 async with aiohttp.ClientSession() as session:
@@ -582,12 +582,12 @@ async def fetch_ai_response(messages, require_vision=False):
                             return data["choices"][0]["message"]["content"]
                             
         except Exception as e:
-            print(f"【⚠️ 失败】{provider} 的 {model_name} 呼叫失败: {e}。切换下一个备用脑...")
+            print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
             continue
     return None
 
 # ────────────────────────────────────────────────────────
-# 🌐 6. 虚拟网页与启动区块
+# 🌐 6. 虛擬網頁與啟動區塊
 # ────────────────────────────────────────────────────────
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -607,9 +607,9 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_backup_server)
     server_thread.daemon = True
     server_thread.start()
-    print("【🌐 系统通知】虚拟网页伺服器已在背景启动！")
+    print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動！")
 
     if DISCORD_TOKEN:
         bot.run(DISCORD_TOKEN)
     else:
-        print("【错误】找不到 DISCORD_TOKEN_7L，请确认环境变数是否设定正确！")
+        print("【錯誤】找不到 DISCORD_TOKEN_7L，請確認環境變數是否設定正確！")
