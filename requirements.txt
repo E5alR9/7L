@@ -1,5 +1,4 @@
 discord.py
 groq
 aiohttp
-motor
-dnspython
+pip install firebase-admin
