@@ -176,7 +176,7 @@ async def auto_chat_loop():
             print("【🧠 自主成功】主動標記發言成功！")
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 一般訊息回覆處理
+# 4. 💬 一般訊息回覆處理 (真人多段打字流)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -224,12 +224,44 @@ async def on_message(message):
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
+            # 先把這整串對話記錄存到記憶體中
             conversation_history[channel_id].append({"role": "user", "content": formatted_prompt})
             conversation_history[channel_id].append({"role": "assistant", "content": bot_reply})
             if len(conversation_history[channel_id]) > 50:
                 conversation_history[channel_id] = conversation_history[channel_id][-50:]
 
-            await message.reply(bot_reply, allowed_mentions=smart_mentions)
+            # ────────────────────────────────────────────────────────
+            # ✨ 真人拆話發送核心邏輯
+            # ────────────────────────────────────────────────────────
+            # 將 AI 的回答，按照「換行符號」拆開（去除多餘的空白列）
+            reply_lines = [line.strip() for line in bot_reply.split('\n') if line.strip()]
+
+            if not reply_lines:
+                await message.reply(bot_reply, allowed_mentions=smart_mentions)
+                return
+
+            # 1. 發送第一句（使用回覆 reply 方式發送，這樣使用者才知道在回誰）
+            first_msg = await message.reply(reply_lines[0], allowed_mentions=smart_mentions)
+
+            # 2. 如果 AI 的回答不只一句，剩下的句子就「隨機頓一下，像打字一樣」一條一條發出來
+            if len(reply_lines) > 1:
+                # 為了避免太吵，最多只連發 3 條訊息，剩下的合併發送
+                extra_lines = reply_lines[1:3] 
+                if len(reply_lines) > 3:
+                    # 如果超過 3 行，把後面的重新拼在一起，當成最後一條訊息發送
+                    extra_lines.append(" ".join(reply_lines[3:]))
+
+                for line in extra_lines:
+                    # 模擬真人打字的速度：隨機等待 1.2 到 2.8 秒
+                    delay = random.uniform(1.2, 2.8)
+                    await asyncio.sleep(delay)
+                    
+                    # 模擬打字中的「正在輸入...」提示
+                    async with message.channel.typing():
+                        # 等待一個打字反應時間
+                        await asyncio.sleep(random.uniform(0.5, 1.2))
+                        # 用 channel.send (不用 message.reply) 連發，這樣看起來就像真人洗板一樣自然
+                        await message.channel.send(line, allowed_mentions=smart_mentions)
 
     await bot.process_commands(message)
 
