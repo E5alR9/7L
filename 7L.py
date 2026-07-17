@@ -5,8 +5,17 @@ import asyncio
 import aiohttp
 import discord
 import threading
+import base64  # ✨ 新增：用於將圖片轉為 Base64 格式
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
+
+# ✨ 新增：用於影片關鍵影格抽樣
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
 # 1. 🔑 金鑰與基礎設定（四核心 Groq 金鑰 + 雙軌記憶體設定）
@@ -14,8 +23,8 @@ from discord.ext import commands, tasks
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")  # 👈 帳號 A
 GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")  # 👈 帳號 B
-GROQ_API_KEY_3 = os.getenv("GROQ_API_KEY_3")  # 👈 帳號 C (✨ 新增)
-GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")  # 👈 帳號 D (✨ 新增)
+GROQ_API_KEY_3 = os.getenv("GROQ_API_KEY_3")  # 👈 帳號 C
+GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")  # 👈 帳號 D
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")            
@@ -28,8 +37,8 @@ try:
     from groq import AsyncGroq
     ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
     ai_client_2 = AsyncGroq(api_key=GROQ_API_KEY_2) if GROQ_API_KEY_2 else None
-    ai_client_3 = AsyncGroq(api_key=GROQ_API_KEY_3) if GROQ_API_KEY_3 else None  # 👈 帳號 C 初始化
-    ai_client_4 = AsyncGroq(api_key=GROQ_API_KEY_4) if GROQ_API_KEY_4 else None  # 👈 帳號 D 初始化
+    ai_client_3 = AsyncGroq(api_key=GROQ_API_KEY_3) if GROQ_API_KEY_3 else None
+    ai_client_4 = AsyncGroq(api_key=GROQ_API_KEY_4) if GROQ_API_KEY_4 else None
 except ImportError:
     ai_client_1 = None
     ai_client_2 = None
@@ -53,7 +62,7 @@ HIPPOCAMPUS_CACHE = {}
 if HAS_MOTOR and MONGO_URI:
     try:
         db_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-        db = db_client["7L_Bot_Database"]           
+        db = db_client["7L_Bot_Database"]            
         history_collection = db["channel_history"]  
         print("【💾 系統通知】MongoDB 雲端永久大腦就緒（雙軌模式啟動）！")
     except Exception as e:
@@ -65,7 +74,6 @@ else:
 # 💾 雲端長存記憶（底層讀寫函式）
 # ────────────────────────────────────────────────────────
 async def fetch_from_long_term_memory(channel_id):
-    """【深層回想】從雲端資料庫抓取該頻道的完整長存記憶"""
     if history_collection is not None:
         try:
             doc = await history_collection.find_one({"channel_id": str(channel_id)})
@@ -76,7 +84,6 @@ async def fetch_from_long_term_memory(channel_id):
     return []
 
 async def save_to_long_term_memory(channel_id, history):
-    """【記憶鞏固】將記憶同步回雲端，限制 50 筆"""
     if len(history) > 50:
         history = history[-50:]
         
@@ -92,66 +99,96 @@ async def save_to_long_term_memory(channel_id, history):
             print(f"【⚠️ 儲存失敗】無法同步記憶至雲端: {e}")
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪華跨平台備用大腦池 (升級為 4 個 Groq 槽位)
+# 🖼️ 新增：多媒體影格抽取工具
+# ────────────────────────────────────────────────────────
+async def extract_video_frames(attachment, max_frames=4):
+    """【影片拆解】下載影片並使用 OpenCV 均勻抽取關鍵影格轉為 Base64"""
+    if not HAS_CV2:
+        print("【⚠️ 系統警告】未安裝 opencv-python-headless，無法解析影片！")
+        return []
+    try:
+        video_bytes = await attachment.read()
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+            temp_video.write(video_bytes)
+            temp_path = temp_video.name
+        
+        cap = cv2.VideoCapture(temp_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0: return []
+            
+        frame_indices = np.linspace(0, total_frames - 1, max_frames, dtype=int)
+        base64_frames = []
+        
+        for idx in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            success, frame = cap.read()
+            if success:
+                frame = cv2.resize(frame, (640, 480))
+                _, buffer = cv2.imencode('.jpg', frame)
+                base64_str = base64.b64encode(buffer).decode('utf-8')
+                base64_frames.append(base64_str)
+                
+        cap.release()
+        os.unlink(temp_path)
+        return base64_frames
+    except Exception as e:
+        print(f"【⚠️ 影片解析失敗】: {e}")
+        return []
+
+# ────────────────────────────────────────────────────────
+# 🧠 豪華跨平台備用大腦池 (加入了 Vision 標記)
 # ────────────────────────────────────────────────────────
 MODEL_POOLS = [
-    # ────────────────────────────────────────────────────────
-    # 🌟 第一梯隊：頂級旗艦大腦（智商天花板，優先調用）
-    # ────────────────────────────────────────────────────────
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        # 🥇 帳號 A
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        # 🥈 帳號 B
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        # 🥉 帳號 C (✨ 新增)
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        # 🏅 帳號 D (✨ 新增)
+    # 🌟 第一梯隊：頂級旗艦大腦
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        
     {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
-    {"provider": "gemini", "model": "gemini-1.5-flash"},                             
+    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # ✨ 支援視覺                            
     {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
     {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        
     {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-70b-versatile"},                        # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-70b-versatile"},                        # ✨ 帳號 D
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-70b-versatile"},                        
     {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   
     {"provider": "groq", "client": ai_client_1, "model": "llama3-70b-8192"},                                
     {"provider": "groq", "client": ai_client_2, "model": "llama3-70b-8192"},                                
-    {"provider": "groq", "client": ai_client_3, "model": "llama3-70b-8192"},                                # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "llama3-70b-8192"},                                # ✨ 帳號 D
+    {"provider": "groq", "client": ai_client_3, "model": "llama3-70b-8192"},                                
+    {"provider": "groq", "client": ai_client_4, "model": "llama3-70b-8192"},                                
 
-    # ────────────────────────────────────────────────────────
-    # 💎 第二梯隊：32B ~ 45B 中大型大腦（實力派中階，兼顧智商與速度）
-    # ────────────────────────────────────────────────────────
+    # 💎 第二梯隊
     {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          
-    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                             
-    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                             
-    {"provider": "groq", "client": ai_client_3, "model": "mixtral-8x7b-32768"},                             # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "mixtral-8x7b-32768"},                             # ✨ 帳號 D
+    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                              
+    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                              
+    {"provider": "groq", "client": ai_client_3, "model": "mixtral-8x7b-32768"},                              
+    {"provider": "groq", "client": ai_client_4, "model": "mixtral-8x7b-32768"},                              
     {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
 
-    # ────────────────────────────────────────────────────────
-    # ⚡ 第三梯隊：7B ~ 11B 輕量級主力（速度極快，群聊刷話防護盾）
-    # ────────────────────────────────────────────────────────
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"},                   
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview"},                   
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-11b-vision-preview"},                   # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-11b-vision-preview"},                   # ✨ 帳號 D
+    # ⚡ 第三梯隊
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True}, # ✨ 支援視覺
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview", "vision": True}, # ✨ 支援視覺
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-11b-vision-preview", "vision": True}, # ✨ 支援視覺
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-11b-vision-preview", "vision": True}, # ✨ 支援視覺
     {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                
     {"provider": "groq", "client": ai_client_1, "model": "gemma2-9b-it"},                                    
     {"provider": "groq", "client": ai_client_2, "model": "gemma2-9b-it"},                                    
     {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                           
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                           
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                           # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"},                           # ✨ 帳號 D
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                            
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                            
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                            
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"},                            
     {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       
-    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                 
+    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                  
 
-    # ────────────────────────────────────────────────────────
-    # 🛡️ 第四梯隊：1B ~ 3B 袖珍型口袋腦（極限墊底，死守最後防線）
-    # ────────────────────────────────────────────────────────
+    # 🛡️ 第四梯隊
     {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                           
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                           
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-3b-preview"},                           # ✨ 帳號 C
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-3b-preview"},                           # ✨ 帳號 D
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"}    
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                            
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                            
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-3b-preview"},                            
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-3b-preview"},                            
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview", "vision": True}  # ✨ 支援視覺 
 ]
 
 # 📜 全域共用規則
@@ -167,7 +204,7 @@ COMMON_RULES = """
    - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1 句話之內**。
    - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
 5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
-6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ decorate對方。
+6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
 
 🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
 - ❌ 絕對禁止在妳的回答中印出「【對妳發言】」、「【群聊旁聽】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
@@ -209,7 +246,7 @@ async def on_ready():
         print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭話任務
+# 3. 🧠 背景自主搭話任務 (維持原樣)
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
@@ -305,7 +342,7 @@ async def auto_chat_loop():
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心
+# 4. 💬 訊息處理核心 (✨ 加入視覺動態觸發)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -337,8 +374,9 @@ async def on_message(message):
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
 
+    # ── 情況 A：有人標記或回覆 Bot ──
     if should_trigger:
-        if not user_prompt:
+        if not user_prompt and not message.attachments:
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
@@ -348,14 +386,54 @@ async def on_message(message):
                 f"訊息內容：「{user_prompt}」"
             )
 
-            messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": formatted_prompt}]
+            # 🖼️ 🎬 動態處理：有附件才打包 Multimodal 格式
+            has_media = False
+            content_payload = [{"type": "text", "text": formatted_prompt}]
+            
+            if message.attachments:
+                for attachment in message.attachments:
+                    c_type = attachment.content_type or ""
+                    # 處理圖片
+                    if any(t in c_type for t in ["image/png", "image/jpeg", "image/webp", "image/gif"]):
+                        try:
+                            img_bytes = await attachment.read()
+                            base64_img = base64.b64encode(img_bytes).decode('utf-8')
+                            content_payload.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{c_type};base64,{base64_img}"}
+                            })
+                            has_media = True
+                        except Exception as e:
+                            print(f"【⚠️ 圖片處理失敗】: {e}")
+                            
+                    # 處理影片
+                    elif any(t in c_type for t in ["video/mp4", "video/quicktime", "video/webm"]):
+                        frames = await extract_video_frames(attachment, max_frames=4)
+                        if frames:
+                            for frame in frames:
+                                content_payload.append({
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{frame}"}
+                                })
+                            has_media = True
+
+            # 如果有媒體，當前對話使用 Multimodal Payload；否則維持純文字
+            if has_media:
+                immediate_user_msg = {"role": "user", "content": content_payload}
+                # 歷史存檔強制壓平，防爆資料庫
+                history_user_msg = {"role": "user", "content": f"（使用者傳送了圖片/影片）\n{formatted_prompt}"}
+            else:
+                immediate_user_msg = {"role": "user", "content": formatted_prompt}
+                history_user_msg = {"role": "user", "content": formatted_prompt}
+
+            messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [immediate_user_msg]
             bot_reply = await fetch_ai_response(messages)
 
             if bot_reply is None:
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
-            history.append({"role": "user", "content": formatted_prompt})
+            history.append(history_user_msg)
             history.append({"role": "assistant", "content": bot_reply})
             if len(history) > 50: history = history[-50:]
             HIPPOCAMPUS_CACHE[channel_id] = history
@@ -363,6 +441,7 @@ async def on_message(message):
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
             await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
+            # --- 真人連發第二句機制 ---
             if random.random() < 0.7:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 
@@ -394,6 +473,7 @@ async def on_message(message):
                         await asyncio.sleep(0.5)
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
 
+    # ── 情況 B：純文字群聊旁聽 ──
     else:
         if message.content.strip():
             formatted_bypass = (
@@ -432,12 +512,29 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（自動支援動態傳入的全新 Groq Client）
+# 5. 🧠 跨平台備援核心（✨ 支援視覺相容性過濾）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages):
     for item in MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
+        is_vision_model = item.get("vision", False)
+        
+        # 🛡️ 【視覺相容性過濾】若此模型無視覺能力，將包含圖片的格式扁平化為純文字
+        current_messages = []
+        for msg in messages:
+            content = msg["content"]
+            if isinstance(content, list): # 偵測到 Multimodal Payload
+                if not is_vision_model:
+                    text_parts = [p["text"] for p in content if p["type"] == "text"]
+                    combined_text = " ".join(text_parts)
+                    combined_text = f"（系統提示：使用者傳了圖片/影片，但妳這個備用腦看不見，請傲嬌地抱怨、瞎猜或說妳不想看）\n{combined_text}"
+                    current_messages.append({"role": msg["role"], "content": combined_text})
+                else:
+                    current_messages.append(msg)
+            else:
+                current_messages.append(msg)
+
         try:
             if provider == "groq":
                 target_client = item.get("client")
@@ -445,7 +542,7 @@ async def fetch_ai_response(messages):
                     
                 print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
                 chat_completion = await target_client.chat.completions.create(
-                    messages=messages, model=model_name
+                    messages=current_messages, model=model_name
                 )
                 return chat_completion.choices[0].message.content
                 
@@ -455,7 +552,7 @@ async def fetch_ai_response(messages):
                 url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                    async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
@@ -466,7 +563,7 @@ async def fetch_ai_response(messages):
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://render.com", "X-Title": "7L Bot"}
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                    async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
