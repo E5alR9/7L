@@ -391,7 +391,6 @@ async def on_message(message):
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
-        # ⚠️ 注意：這裡也暫時移除了 typing() 來防止 429 錯誤
         formatted_prompt = (
             f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
             f"訊息內容：「{user_prompt}」"
@@ -431,7 +430,6 @@ async def on_message(message):
         # 如果有媒體，當前對話使用 Multimodal Payload；否則維持純文字
         if has_media:
             immediate_user_msg = {"role": "user", "content": content_payload}
-            # 歷史存檔強制壓平，防爆資料庫
             history_user_msg = {"role": "user", "content": f"（使用者傳送了圖片/影片）\n{formatted_prompt}"}
         else:
             immediate_user_msg = {"role": "user", "content": formatted_prompt}
@@ -439,25 +437,27 @@ async def on_message(message):
 
         messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [immediate_user_msg]
         
-        # 🎯 把有沒有發圖 (has_media) 當成切換大腦開關傳入
         bot_reply = await fetch_ai_response(messages, require_vision=has_media)
 
         if bot_reply is None:
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
 
-       # （原有的第一句歷史寫入本地）
+        # 更新本地快取記憶
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
         if len(history) > 50: history = history[-50:]
         HIPPOCAMPUS_CACHE[channel_id] = history
 
-        # 🔧 調整 1：把原本的 create_task 改成 await，確保第一句記憶「確實存入雲端」後才往下走
-        await save_to_long_term_memory(channel_id, history)
+        # 🚀 修正點 1：先讓 7L 直接秒回訊息，使用者不卡頓
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
+
+        # ☁️ 修正點 2：回完訊息後，立刻丟給背景 task 去同步雲端，不拖延速度
+        asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
         # --- 真人連發第二句機制 ---
         if random.random() < 0.7:
+            # 💡 關鍵：這段打字延時會讓上方的 create_task 在背景有充足時間把第一句寫入 Firebase
             await asyncio.sleep(random.uniform(1.5, 3.0))
             
             follow_up_prompt = (
@@ -466,15 +466,14 @@ async def on_message(message):
                 f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
             )
             
-            # 🎯 調整 2：
+            # 🎯 調整：高機率觸發「雲端深層回想」
             if random.random() < 0.7:
                 print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
-                # 強制直接從 Firebase 撈取最新記憶，不再進行退回海馬迴的檢查
+                # 強制直接從 Firebase 撈取包含剛剛那句話的最新記憶
                 history = await fetch_from_long_term_memory(channel_id)
-                if not history: # 如果雲端真的完全沒資料（通常不可能），才用本地防呆
+                if not history: 
                     history = HIPPOCAMPUS_CACHE[channel_id]
             else:
-               
                 history = HIPPOCAMPUS_CACHE[channel_id]
                 
             second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": follow_up_prompt}]
@@ -485,11 +484,9 @@ async def on_message(message):
                 if len(history) > 50: history = history[-50:]
                 HIPPOCAMPUS_CACHE[channel_id] = history
                 
-                # 第二句發完後，同樣同步到雲端
-                await save_to_long_term_memory(channel_id, history)
-                
-                await asyncio.sleep(0.5)
+                # 🚀 修正點 3：第二句也是先秒發，再非同步存入雲端
                 await message.channel.send(second_reply, allowed_mentions=smart_mentions)
+                asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
     # ── 情況 B：純文字群聊旁聽 ──
     else:
@@ -512,7 +509,7 @@ async def on_message(message):
                 interject_prompt = (
                     f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
                     f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話句。 "
-                    f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出 any 系統格式、括號或後台提示字眼！"
+                    f"請直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出 any 系統格式、括號或後台提示字眼！"
                 )
                 
                 interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
@@ -523,8 +520,8 @@ async def on_message(message):
                     if len(history) > 50: history = history[-50:]
                     HIPPOCAMPUS_CACHE[channel_id] = history
                     
-                    asyncio.create_task(save_to_long_term_memory(channel_id, history))
                     await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
+                    asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
     await bot.process_commands(message)
     
