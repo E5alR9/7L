@@ -9,10 +9,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定
+# 1. 🔑 金鑰與基礎設定（升級為雙 Groq 獨立帳號金鑰）
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") # 請確認環境變數名稱
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")  # 👈 帳號 A
+GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")  # 👈 帳號 B
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -23,53 +24,61 @@ AUTONOMOUS_CHANNEL_ID = None
 
 try:
     from groq import AsyncGroq
-    ai_client = AsyncGroq(api_key=GROQ_API_KEY)
+    # 初始化兩個完全獨立的 Groq 客戶端
+    ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
+    ai_client_2 = AsyncGroq(api_key=GROQ_API_KEY_2) if GROQ_API_KEY_2 else None
 except ImportError:
+    ai_client_1 = None
+    ai_client_2 = None
     pass
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪華跨平台備用大腦池 (防斷線切換矩陣)
-# ────────────────────────────────────────────────────────
-# ────────────────────────────────────────────────────────
-# 📋 終極跨平台防禦矩陣：依智商由大到小排序，且「嚴格平台交叉排列」
-# 💡 這樣可以確保任何一家 API 爆掉時，下一個嘗試的絕對是另一家，徹底避免連鎖崩潰！
+# 🧠 豪華跨平台備用大腦池 (融入「雙 Groq 帳號多輪替機制」)
 # ────────────────────────────────────────────────────────
 MODEL_POOLS = [
     # ────────────────────────────────────────────────────────
     # 🌟 第一梯隊：頂級旗艦大腦（智商天花板，對話最細膩，優先調用）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "model": "llama-3.3-70b-versatile"},                        # 🥇 Groq - 700億參數目前開源首選
-    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   # 🥈 OpenRouter - 700億最新防線
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        # 🥇 帳號 A - 700億參數目前開源首選
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        # 🥈 帳號 B - 700億同模型多帳號備援
+    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   # 🥉 OpenRouter - 700億最新防線
     {"provider": "gemini", "model": "gemini-1.5-flash"},                             # 🔮 Google - 智商極高、額度超肥的平台中斷盾
     {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          # 👑 OpenRouter - 阿里最強 720億中文大腦
-    {"provider": "groq", "model": "llama-3.1-70b-versatile"},                        # 🌀 Groq - 舊版 700億主力大腦
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        # 🌀 帳號 A - 舊版 700億主力大腦
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        # 🌀 帳號 B - 舊版 700億主力大腦
     {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   # 🍃 OpenRouter - 舊版 700億備援
-    {"provider": "groq", "model": "llama3-70b-8192"},                                # ⚡ Groq - 經典 Llama3 700億老牌模型
+    {"provider": "groq", "client": ai_client_1, "model": "llama3-70b-8192"},                                # ⚡ 帳號 A - 經典 Llama3 700億老牌模型
+    {"provider": "groq", "client": ai_client_2, "model": "llama3-70b-8192"},                                # ⚡ 帳號 B - 經典 Llama3 700億老牌模型
 
     # ────────────────────────────────────────────────────────
     # 💎 第二梯隊：32B ~ 45B 中大型大腦（實力派中階，兼顧智商與速度）
     # ────────────────────────────────────────────────────────
     {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          # 🎯 OpenRouter - 320億黃金平衡點，中文超順
-    {"provider": "groq", "model": "mixtral-8x7b-32768"},                             # 🌀 Groq - 450億混合專家模型
+    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                             # 🌀 帳號 A - 450億混合專家模型
+    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                             # 🌀 帳號 B - 450億混合專家模型
     {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     # 🌀 OpenRouter - 450億專家模型備援
 
     # ────────────────────────────────────────────────────────
     # ⚡ 第三梯隊：7B ~ 11B 輕量級主力（速度極快，群聊刷話防護盾）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "model": "llama-3.2-11b-vision-preview"},                   # 🤖 Groq - 110億中型多模態
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"},                   # 🤖 帳號 A - 110億中型多模態
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview"},                   # 🤖 帳號 B - 110億中型多模態
     {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                # 🔴 OpenRouter - 90億 Google 中文優化腦備援
-    {"provider": "groq", "model": "gemma2-9b-it"},                                   # 🔴 Groq - 90億 Google 經典腦
+    {"provider": "groq", "client": ai_client_1, "model": "gemma2-9b-it"},                                   # 🔴 帳號 A - 90億 Google 經典腦
+    {"provider": "groq", "client": ai_client_2, "model": "gemma2-9b-it"},                                   # 🔴 帳號 B - 90億 Google 經典腦
     {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      # ⚡ OpenRouter - Llama3 80億備援
-    {"provider": "groq", "model": "llama-3.1-8b-instant"},                           # ⚡ Groq - 80億極難刷爆的神器
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                           # ⚡ 帳號 A - 80億極難刷爆的神器
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                           # ⚡ 帳號 B - 80億極難刷爆的神器
     {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       # 🔮 OpenRouter - 經典 Mistral 70億備援
-    {"provider": "groq", "model": "llama3-8b-8192"},                                 # ⚡ Groq - 經典 Llama3 輕量版
+    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                 # ⚡ 帳號 A - 經典 Llama3 輕量版
 
     # ────────────────────────────────────────────────────────
     # 🛡️ 第四梯隊：1B ~ 3B 袖珍型口袋腦（極限墊底，死守最後防線）
     # ────────────────────────────────────────────────────────
     {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   # 🍃 OpenRouter - 30億超輕量防線
-    {"provider": "groq", "model": "llama-3.2-3b-preview"},                           # 🍃 Groq - 30億零延遲口袋腦
-    {"provider": "groq", "model": "llama-3.2-1b-preview"}                            # 🍂 Groq - 10億終極極限備用腦
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 A - 30億零延遲口袋腦
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 B - 30億零延遲口袋腦
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-1b-preview"}                            # 🍂 帳號 A - 10億終極極限備用腦
 ]
 
 # ────────────────────────────────────────────────────────
@@ -322,7 +331,7 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心
+# 5. 🧠 跨平台備援核心（已升級：雙 Groq 帳號動態分流版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages):
     for item in MODEL_POOLS:
@@ -330,8 +339,18 @@ async def fetch_ai_response(messages):
         model_name = item["model"]
         try:
             if provider == "groq":
+                # 💡 關鍵改動：從目前輪到的項目中，動態取出綁定的 Client (A帳號或B帳號)
+                target_client = item.get("client")
+                
+                if not target_client:
+                    print(f"【⚠️ 跳過】Groq 模型 {model_name} 缺少對應的金鑰環境變數")
+                    continue
+                    
                 print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
-                chat_completion = await ai_client.chat.completions.create(messages=messages, model=model_name)
+                chat_completion = await target_client.chat.completions.create(
+                    messages=messages, 
+                    model=model_name
+                )
                 return chat_completion.choices[0].message.content
                 
             elif provider == "gemini":
@@ -358,9 +377,10 @@ async def fetch_ai_response(messages):
                             
         except Exception as e:
             print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
+            await asyncio.sleep(1)  # 💡 增加 1 秒緩衝，防止網路瞬間抽搐時連鎖秒退
             continue
+            
     return None
-
 # ────────────────────────────────────────────────────────
 # 🌐 6. 騙 Render 檢查的「虛擬網頁」與啟動區塊
 # ────────────────────────────────────────────────────────
