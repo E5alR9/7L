@@ -9,7 +9,8 @@ import threading
 import base64  # 用於將圖片轉為 Base64 格式
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
-
+from datetime import datetime
+from zoneinfo import ZoneInfo  # Python 3.9+ 內建，支援直接鎖定台灣時區
 # 用於影片關鍵影格抽樣
 try:
     import cv2
@@ -518,6 +519,31 @@ async def on_message(message):
 # 5. 🧠 跨平台備援核心（支援動態大腦分流）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
+    # ─── 🕒 動態注入現實時間（台灣時區） ───
+    try:
+        # 取得精確的台灣時間
+        tw_time = datetime.now(ZoneInfo("Asia/Taipei"))
+        time_str = tw_time.strftime("%Y年%m月%d日 %H點%M分")
+        
+        # 轉換星期格式 (0=星期日, 1=星期一...)
+        weekday_map = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"}
+        weekday_str = f"星期{weekday_map[int(tw_time.strftime('%w'))]}"
+        
+        # 建立時間提示詞，引導 7L 做出對應反應
+        time_context = (
+            f"\n\n【現實世界時間提示】現在時間是：{time_str} ({weekday_str})。"
+            f"請根據這個時間和妳的性格做出對應反應（例如：如果是深夜，傲嬌地催使用者去睡覺；如果是早晨，碎碎念他怎麼這麼早起）。"
+        )
+        
+        # 自動找到對話堆疊中的第一個 system 設定，把時間強行塞進去
+        if messages and messages[0]["role"] == "system":
+            messages[0]["content"] = messages[0]["content"] + time_context
+            
+    except Exception as e:
+        print(f"【⚠️ 時間時區注入失敗】: {e}，將使用預設無時間模式。")
+    # ─────────────────────────────────────
+
+    # ⚠️ 以下維持你原本的模型輪詢與分流邏輯不變
     for item in MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
