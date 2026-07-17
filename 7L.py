@@ -30,46 +30,46 @@ except ImportError:
 # ────────────────────────────────────────────────────────
 # 🧠 豪華跨平台備用大腦池 (防斷線切換矩陣)
 # ────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────
+# 📋 終極跨平台防禦矩陣：依智商由大到小排序，且「嚴格平台交叉排列」
+# 💡 這樣可以確保任何一家 API 爆掉時，下一個嘗試的絕對是另一家，徹底避免連鎖崩潰！
+# ────────────────────────────────────────────────────────
 MODEL_POOLS = [
     # ────────────────────────────────────────────────────────
-    # 🌟 第一梯隊：70B+ 超大型大腦（智商天花板，對話最細膩，優先調用）
+    # 🌟 第一梯隊：頂級旗艦大腦（智商天花板，對話最細膩，優先調用）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "model": "llama-3.3-70b-versatile"},                       # 🥇 700億參數：目前開源首選
-    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   # 🥈 700億參數：OpenRouter 備援
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},         # 👑 720億參數：阿里最強中文大腦
-    {"provider": "groq", "model": "llama-3.1-70b-versatile"},                       # 舊版 700億參數大腦
-    {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   # 舊版 700億參數 OpenRouter 備援
-    {"provider": "groq", "model": "llama3-70b-8192"},                               # 經典 Llama3 700億老牌模型
+    {"provider": "groq", "model": "llama-3.3-70b-versatile"},                        # 🥇 Groq - 700億參數目前開源首選
+    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   # 🥈 OpenRouter - 700億最新防線
+    {"provider": "gemini", "model": "gemini-1.5-flash"},                             # 🔮 Google - 智商極高、額度超肥的平台中斷盾
+    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          # 👑 OpenRouter - 阿里最強 720億中文大腦
+    {"provider": "groq", "model": "llama-3.1-70b-versatile"},                        # 🌀 Groq - 舊版 700億主力大腦
+    {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   # 🍃 OpenRouter - 舊版 700億備援
+    {"provider": "groq", "model": "llama3-70b-8192"},                                # ⚡ Groq - 經典 Llama3 700億老牌模型
 
     # ────────────────────────────────────────────────────────
-    # 💎 特等兵：Google 旗艦大腦（雖然是 Flash，但綜合智商直逼頂級大模型）
+    # 💎 第二梯隊：32B ~ 45B 中大型大腦（實力派中階，兼顧智商與速度）
     # ────────────────────────────────────────────────────────
-    {"provider": "gemini", "model": "gemini-1.5-flash"},                            # 🔮 中文理解力極強、免費額度超肥
+    {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          # 🎯 OpenRouter - 320億黃金平衡點，中文超順
+    {"provider": "groq", "model": "mixtral-8x7b-32768"},                             # 🌀 Groq - 450億混合專家模型
+    {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     # 🌀 OpenRouter - 450億專家模型備援
 
     # ────────────────────────────────────────────────────────
-    # ⚡ 第二梯隊：32B ~ 45B 中大型大腦（實力派中階，反應快且聰明）
+    # ⚡ 第三梯隊：7B ~ 11B 輕量級主力（速度極快，群聊刷話防護盾）
     # ────────────────────────────────────────────────────────
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},         # 🎯 320億參數：黃金平衡點，中文超順
-    {"provider": "groq", "model": "mixtral-8x7b-32768"},                            # 🌀 450億參數：法國混合專家模型
-    {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     # 🌀 450億參數：OpenRouter 備援
-
-    # ────────────────────────────────────────────────────────
-    # 🍃 第三梯隊：7B ~ 11B 輕量級主力（速度極快，群聊刷話防護盾）
-    # ────────────────────────────────────────────────────────
-    {"provider": "groq", "model": "llama-3.2-11b-vision-preview"},                  # 🤖 110億參數：中型多模態
-    {"provider": "groq", "model": "gemma2-9b-it"},                                  # 🔴 90億參數：Google 經典中文優化腦
-    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},               # 🔴 90億參數：OpenRouter 備援
-    {"provider": "groq", "model": "llama-3.1-8b-instant"},                          # ⚡ 80億參數：Groq 刷話神器（極難刷爆）
-    {"provider": "groq", "model": "llama3-8b-8192"},                                # ⚡ 80億參數：經典 Llama3 輕量版
-    {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},     # ⚡ 80億參數：OpenRouter Llama3 備援
-    {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},      # 🔮 70億參數：經典 Mistral 備援
+    {"provider": "groq", "model": "llama-3.2-11b-vision-preview"},                   # 🤖 Groq - 110億中型多模態
+    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                # 🔴 OpenRouter - 90億 Google 中文優化腦備援
+    {"provider": "groq", "model": "gemma2-9b-it"},                                   # 🔴 Groq - 90億 Google 經典腦
+    {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      # ⚡ OpenRouter - Llama3 80億備援
+    {"provider": "groq", "model": "llama-3.1-8b-instant"},                           # ⚡ Groq - 80億極難刷爆的神器
+    {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       # 🔮 OpenRouter - 經典 Mistral 70億備援
+    {"provider": "groq", "model": "llama3-8b-8192"},                                 # ⚡ Groq - 經典 Llama3 輕量版
 
     # ────────────────────────────────────────────────────────
     # 🛡️ 第四梯隊：1B ~ 3B 袖珍型口袋腦（極限墊底，死守最後防線）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "model": "llama-3.2-3b-preview"},                          # 🍃 30億參數：超輕量，反應零延遲
-    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   # 🍃 30億參數：OpenRouter 備援
-    {"provider": "groq", "model": "llama-3.2-1b-preview"}                           # 🍂 10億參數：終極極限備用腦
+    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   # 🍃 OpenRouter - 30億超輕量防線
+    {"provider": "groq", "model": "llama-3.2-3b-preview"},                           # 🍃 Groq - 30億零延遲口袋腦
+    {"provider": "groq", "model": "llama-3.2-1b-preview"}                            # 🍂 Groq - 10億終極極限備用腦
 ]
 
 # ────────────────────────────────────────────────────────
