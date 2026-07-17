@@ -9,14 +9,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定（升級為雙 Groq 獨立帳號金鑰 + MongoDB 雲端記憶體）
+# 1. 🔑 金鑰與基礎設定（雙 Groq 金鑰 + 雙軌記憶體設定）
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")  # 👈 帳號 A
 GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")  # 👈 帳號 B
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MONGO_URI = os.getenv("MONGO_URI")            # 👈 剛剛拿到的 MongoDB 連線字串環境變數
+MONGO_URI = os.getenv("MONGO_URI")            
 
 PING_TARGETS = [] 
 AUTONOMOUS_CHANNEL_ID = None 
@@ -31,7 +31,7 @@ except ImportError:
     ai_client_2 = None
     pass
 
-# 初始化 MongoDB 區塊（使用非同步驅動 motor）
+# 初始化 MongoDB 區塊
 try:
     import motor.motor_asyncio
     HAS_MOTOR = True
@@ -40,35 +40,38 @@ except ImportError:
 
 db_client = None
 history_collection = None
-conversation_history_backup = {} # 當資料庫未連線時的本地記憶體後備方案
+
+# 🧠 【雙軌架構】動態海馬迴快取 (Short-term / RAM)
+# 格式：{ channel_id: [messages_list] }
+HIPPOCAMPUS_CACHE = {} 
 
 if HAS_MOTOR and MONGO_URI:
     try:
         db_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-        db = db_client["7L_Bot_Database"]           # 資料庫名稱
-        history_collection = db["channel_history"]  # 集合名稱
-        print("【💾 系統通知】MongoDB 雲端持久化大腦連線成功！")
+        db = db_client["7L_Bot_Database"]           
+        history_collection = db["channel_history"]  
+        print("【💾 系統通知】MongoDB 雲端永久大腦就緒（雙軌模式啟動）！")
     except Exception as e:
-        print(f"【⚠️ 系統警告】MongoDB 初始化失敗: {e}，將自動切換為本地記憶體暫存模式。")
+        print(f"【⚠️ 系統警告】MongoDB 連線失敗: {e}，將僅使用本地海馬迴。")
 else:
-    print("【⚠️ 系統警告】未偵測到 motor 套件或 MONGO_URI 環境變數，將採用本地記憶體暫存模式（重啟後記憶會消失）。")
+    print("【⚠️ 系統警告】未設定 MONGO_URI，僅使用本地海馬迴模式。")
 
 # ────────────────────────────────────────────────────────
-# 💾 雲端資料庫讀寫核心優化函式
+# 💾 雲端長存記憶（底層讀寫函式）
 # ────────────────────────────────────────────────────────
-async def get_channel_history(channel_id):
-    """從雲端資料庫撈取該頻道的對話記憶"""
+async def fetch_from_long_term_memory(channel_id):
+    """【深層回想】從雲端資料庫抓取該頻道的完整長存記憶"""
     if history_collection is not None:
         try:
             doc = await history_collection.find_one({"channel_id": str(channel_id)})
             if doc:
                 return doc.get("history", [])
         except Exception as e:
-            print(f"【⚠️ 讀取失敗】無法自 MongoDB 讀取頻道 {channel_id} 的記憶: {e}")
-    return conversation_history_backup.get(channel_id, [])
+            print(f"【⚠️ 讀取失敗】無法自雲端讀取頻道 {channel_id} 的長存記憶: {e}")
+    return []
 
-async def save_channel_history(channel_id, history):
-    """將該頻道的最新記憶同步回雲端資料庫，限制最高 50 筆紀錄"""
+async def save_to_long_term_memory(channel_id, history):
+    """【記憶鞏固】將記憶同步回雲端，限制 50 筆"""
     if len(history) > 50:
         history = history[-50:]
         
@@ -79,10 +82,9 @@ async def save_channel_history(channel_id, history):
                 {"$set": {"history": history}},
                 upsert=True
             )
-            return
+            print(f"【💾 記憶鞏固】頻道 {channel_id} 的記憶已成功同步至雲端長存區。")
         except Exception as e:
-            print(f"【⚠️ 儲存失敗】無法同步記憶至 MongoDB: {e}")
-    conversation_history_backup[channel_id] = history
+            print(f"【⚠️ 儲存失敗】無法同步記憶至雲端: {e}")
 
 # ────────────────────────────────────────────────────────
 # 🧠 豪華跨平台備用大腦池
@@ -171,7 +173,7 @@ async def on_ready():
         print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭話任務 (每 30 分鐘觸發 - 真正動態活人雲端掃描版)
+# 3. 🧠 背景自主搭話任務
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
@@ -181,17 +183,14 @@ async def auto_chat_loop():
     if random.random() > 0.3:
         return
 
-    # 🎯 核心升級一：從 MongoDB 雲端資料庫中提取有歷史紀錄的所有頻道 ID
-    recent_channel_ids = []
-    if history_collection is not None:
+    # 從海馬迴快取中挑選活人頻道
+    recent_channel_ids = list(HIPPOCAMPUS_CACHE.keys())
+    if not recent_channel_ids and history_collection is not None:
         try:
             cursor = history_collection.find({}, {"channel_id": 1})
             recent_channel_ids = [int(doc["channel_id"]) async for doc in cursor]
-        except Exception as e:
-            print(f"【⚠️ 失敗】無法從資料庫撈取活人頻道清單: {e}")
-            recent_channel_ids = list(conversation_history_backup.keys())
-    else:
-        recent_channel_ids = list(conversation_history_backup.keys())
+        except Exception:
+            pass
 
     valid_channels = []
     for cid in recent_channel_ids:
@@ -202,14 +201,12 @@ async def auto_chat_loop():
     channel = None
     if valid_channels:
         channel = random.choice(valid_channels)
-        print(f"【🧠 自主選擇】成功從雲端記憶中挑選了最近互動過的頻道：{channel.name} ({channel.id})")
     else:
         all_valid_channels = []
         for guild in bot.guilds:
             all_valid_channels.extend([c for c in guild.text_channels if c.permissions_for(guild.me).send_messages])
         if all_valid_channels:
             channel = random.choice(all_valid_channels)
-            print(f"【🧠 自主備援】目前暫無雲端記憶，隨機挑選了可發言頻道：{channel.name}")
     
     if not channel:
         return
@@ -218,8 +215,11 @@ async def auto_chat_loop():
     channel_id = channel.id
     active_users = []
 
-    # 🎯 核心升級二：從雲端獲取該頻道的對話記憶並尋找最近發言的活人
-    history = await get_channel_history(channel_id)
+    # 讀取記憶（優先從海馬迴讀取）
+    if channel_id not in HIPPOCAMPUS_CACHE:
+        HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
+    history = HIPPOCAMPUS_CACHE[channel_id]
+
     if history:
         for msg in history:
             if msg["role"] == "user":
@@ -233,15 +233,11 @@ async def auto_chat_loop():
                 if not msg.author.bot:
                     if msg.author.id not in active_users:
                         active_users.append(msg.author.id)
-        except Exception as e:
-            print(f"【⚠️ 失敗】無法讀取頻道 {channel.name} 的歷史紀錄: {e}")
+        except Exception:
+            pass
 
     if active_users:
         lucky_user_id = random.choice(active_users)
-        print(f"【🧠 自主目標】成功抓到活躍使用者 ID：{lucky_user_id}")
-    elif PING_TARGETS:
-        lucky_user_id = random.choice(PING_TARGETS)
-        print(f"【🧠 目標備援】頻道最近無人發言，使用預設的後備 PING_TARGETS：{lucky_user_id}")
 
     async with channel.typing():
         if lucky_user_id:
@@ -266,15 +262,17 @@ async def auto_chat_loop():
             log_content = f"【妳主動搭話】對 {user_mention} 說話" if lucky_user_id else "【妳主動發言】自言自語"
             history.append({"role": "user", "content": log_content})
             history.append({"role": "assistant", "content": bot_reply})
-            
-            # 將自主發言的對話同步保存回雲端資料庫
-            await save_channel_history(channel_id, history)
+            if len(history) > 50:
+                history = history[-50:]
+                
+            HIPPOCAMPUS_CACHE[channel_id] = history
+            # 👉 背景非同步同步，不卡當前聊天
+            asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
-            print("【🧠 自主成功】自主模式發言成功，且記憶已同步雲端！")
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心 (✨全新升級：融入雲端資料庫旁聽記憶機制✨)
+# 4. 💬 訊息處理核心（✨雙軌海馬迴記憶機制✨）
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -283,8 +281,12 @@ async def on_message(message):
 
     channel_id = message.channel.id
     
-    # 🎯 核心修改點：每次對話前，都從雲端撈取專屬該頻道的歷史記憶
-    history = await get_channel_history(channel_id)
+    # 🧠 【第一軌：海馬迴觸發】優先秒讀本地快取，海馬迴沒資料才去雲端撈第一次
+    if channel_id not in HIPPOCAMPUS_CACHE:
+        print(f"【🧠 海馬迴】冷啟動，從雲端長存記憶區下載頻道 {channel_id} 的回憶...")
+        HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
+        
+    history = HIPPOCAMPUS_CACHE[channel_id]
 
     should_trigger = False
     user_prompt = ""
@@ -315,24 +317,27 @@ async def on_message(message):
                 f"訊息內容：「{user_prompt}」"
             )
 
+            # 第一句完全依賴海馬迴（RAM 快取），回覆速度拉滿！
             messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": formatted_prompt}]
-
-            # 1️⃣ 呼叫 API 產生第一句回覆
             bot_reply = await fetch_ai_response(messages)
 
             if bot_reply is None:
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
-            # 將第一句紀錄推入歷史，並即時同步存入 MongoDB 雲端
+            # 更新海馬迴快取
             history.append({"role": "user", "content": formatted_prompt})
             history.append({"role": "assistant", "content": bot_reply})
-            await save_channel_history(channel_id, history)
+            if len(history) > 50: history = history[-50:]
+            HIPPOCAMPUS_CACHE[channel_id] = history
 
-            # 2️⃣ 用「回覆 (Reply)」的方式發送第一句話
+            # 👉 【關鍵改動】用背景任務存雲端，完美避開雲端網路延遲！
+            asyncio.create_task(save_to_long_term_memory(channel_id, history))
+
+            # 發送第一句話
             await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-            # 3️⃣ 🧠 真人連發第二句機制 (隨機 40% 機率會連發)
+            # 3️⃣ 🧠 真人連發第二句機制 (隨機 40% 機率連發)
             if random.random() < 0.4:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 
@@ -343,17 +348,27 @@ async def on_message(message):
                         f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                     )
                     
-                    # 重新拉取剛剛存進雲端的最全新 history 進度
-                    updated_history = await get_channel_history(channel_id)
-                    second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + updated_history + [{"role": "user", "content": follow_up_prompt}]
-                    
-                    # 4️⃣ 呼叫 API 產生第二句話
+                    # 🔮 【第二軌：機率性調用雲端】
+                    # 在連發第二句時，有 50% 機率強制去雲端資料庫刷新記憶，模擬深層回想
+                    if random.random() < 0.5:
+                        print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
+                        history = await fetch_from_long_term_memory(channel_id)
+                        # 將雲端撈到的最新進度與剛才的第一句融合
+                        if not history or history[-1].get("content") != bot_reply:
+                            history = HIPPOCAMPUS_CACHE[channel_id]
+                    else:
+                        history = HIPPOCAMPUS_CACHE[channel_id]
+                        
+                    second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": follow_up_prompt}]
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
-                        # 將第二句話也同步推回 MongoDB 雲端
-                        updated_history.append({"role": "assistant", "content": second_reply})
-                        await save_channel_history(channel_id, updated_history)
+                        history.append({"role": "assistant", "content": second_reply})
+                        if len(history) > 50: history = history[-50:]
+                        HIPPOCAMPUS_CACHE[channel_id] = history
+                        
+                        # 再次丟去背景悄悄儲存
+                        asyncio.create_task(save_to_long_term_memory(channel_id, history))
                         
                         await asyncio.sleep(0.5)
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
@@ -365,9 +380,13 @@ async def on_message(message):
                 f"【群聊旁聽】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
                 f"訊息內容：「{message.content.strip()}」"
             )
-            # 悄悄將旁聽到的對話塞入該頻道的雲端記憶庫中
+            # 旁聽直接寫入海馬迴
             history.append({"role": "user", "content": formatted_bypass})
-            await save_channel_history(channel_id, history)
+            if len(history) > 50: history = history[-50:]
+            HIPPOCAMPUS_CACHE[channel_id] = history
+            
+            # 旁聽儲存也是丟背景背景同步，絕對不卡群聊節奏
+            asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
     await bot.process_commands(message)
     
@@ -381,13 +400,11 @@ async def fetch_ai_response(messages):
         try:
             if provider == "groq":
                 target_client = item.get("client")
-                if not target_client:
-                    continue
+                if not target_client: continue
                     
                 print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
                 chat_completion = await target_client.chat.completions.create(
-                    messages=messages, 
-                    model=model_name
+                    messages=messages, model=model_name
                 )
                 return chat_completion.choices[0].message.content
                 
@@ -417,11 +434,10 @@ async def fetch_ai_response(messages):
             print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
             await asyncio.sleep(1)
             continue
-            
     return None
 
 # ────────────────────────────────────────────────────────
-# 🌐 6. 虛擬網頁與啟動區塊 (Render 專用防休眠機制)
+# 🌐 6. 虛擬網頁與啟動區塊
 # ────────────────────────────────────────────────────────
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -430,8 +446,7 @@ class DummyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"All Miku & Sisters Bots are alive!")
 
-    def log_message(self, format, *args):
-        return
+    def log_message(self, format, *args): return
 
 def run_backup_server():
     port = int(os.environ.get("PORT", 10000))
@@ -442,7 +457,7 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_backup_server)
     server_thread.daemon = True
     server_thread.start()
-    print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動 (準備接客 Ping)！")
+    print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動！")
 
     if DISCORD_TOKEN:
         bot.run(DISCORD_TOKEN)
