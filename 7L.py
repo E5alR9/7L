@@ -450,23 +450,32 @@ async def on_message(message):
         # ☁️ 修正點 2：回完訊息後，立刻丟給背景 task 去同步雲端，不拖延速度
         asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-        # --- 真人連發第二句機制 (已移除人工延時) ---
+       # --- 真人連發第二句機制 (融入網路聯想與記憶鞏固) ---
         if random.random() < 0.7:
+            # 🌐 【步驟 A】不影響第一句，現在背景偷偷聯想/上網查這個梗
+            print(f"【🌐 網路探針】7L 正在大腦暗處調查關鍵字：{user_prompt}")
+            web_knowledge = await search_internet_meme(user_prompt)
+            
+            # 🧠 【步驟 B】把查到的網頁資料，包裝成雲端海馬迴的「頓悟提示」
+            brain_insight = f"（🧠 7L 的雲端大腦聯想補完：關於使用者提到的「{user_prompt}」，網路上的真實意思是：\n{web_knowledge}）"
+            
             follow_up_prompt = (
-                f"【系統提示（不可外洩）】妳剛剛對他就說了：「{bot_reply}」。"
-                f"請像真實人類傳訊息一樣，傲嬌地「再傳一則短訊息」補充（例如：突然想到什麼、多一句碎碎念、催促、或者傲嬌地質問）。"
+                f"【系統提示（不可外洩）】妳剛剛秒回了對方。現在妳的雲端大腦剛剛聯想到了這個新知識：{brain_insight}。"
+                f"請結合這個新知識，傲嬌地傳第二則短訊息補充（例如：突然看懂了對方的梗而吐槽、恍然大悟但嘴硬裝懂、或者用新學到的梗反擊對方）。"
                 f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
             )
             
             # 🎯 調整：高機率觸發「雲端深層回想」
             if random.random() < 0.7:
                 print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
-                # 強制直接從 Firebase 撈取包含剛剛那句話的最新記憶
                 history = await fetch_from_long_term_memory(channel_id)
                 if not history: 
                     history = HIPPOCAMPUS_CACHE[channel_id]
             else:
                 history = HIPPOCAMPUS_CACHE[channel_id]
+            
+            # 💾 【步驟 C】把這個「新查到的知識」塞進歷史歷史紀錄，這樣她以後就「永遠記得」這個梗了！
+            history.append({"role": "user", "content": f"（系統記憶注入：{brain_insight}）"})
                 
             second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": follow_up_prompt}]
             second_reply = await fetch_ai_response(second_messages)
@@ -476,10 +485,10 @@ async def on_message(message):
                 if len(history) > 50: history = history[-50:]
                 HIPPOCAMPUS_CACHE[channel_id] = history
                 
-                # 🚀 修正點 3：第二句也是先秒發，再非同步存入雲端
+                # 🚀 秒發第二句，並異步鞏固記憶到 Firebase
                 await message.channel.send(second_reply, allowed_mentions=smart_mentions)
                 asyncio.create_task(save_to_long_term_memory(channel_id, history))
-
+                
     # ── 情況 B：純文字群聊旁聽 ──
     else:
         if message.content.strip():
@@ -605,6 +614,30 @@ async def fetch_ai_response(messages, require_vision=False):
             print(f"【⚠️ 失敗】{provider} 的 {model_name} 呼叫失敗: {e}。切換下一個備用腦...")
             continue
     return None
+
+# ────────────────────────────────────────────────────────
+# 🌐 網路聯想探針（免金鑰搜尋工具）
+# ────────────────────────────────────────────────────────
+async def search_internet_meme(query):
+    """在背景偷偷上網查梗，限制只拿前 2 條精簡摘要"""
+    if not query or len(query.strip()) < 2:
+        return "無效的關鍵字"
+    try:
+        from duckduckgo_search import DDGS
+        # 因為 DDGS 是同步阻塞的，我們用 asyncio.to_thread 丟到背景執行，避免卡死 Bot
+        def sync_search():
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=2))
+        
+        results = await asyncio.to_thread(sync_search)
+        if results:
+            summary = []
+            for r in results:
+                summary.append(f"標題: {r['title']}\n內容: {r['body']}")
+            return "\n\n".join(summary)
+    except Exception as e:
+        print(f"【⚠️ 網路探針故障】無法搜尋「{query}」: {e}")
+    return "網路訊號不佳，查不到相關資料。"
 
 # ────────────────────────────────────────────────────────
 # 🌐 6. 虛擬網頁與啟動區塊
