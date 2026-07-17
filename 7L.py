@@ -446,12 +446,14 @@ async def on_message(message):
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
 
+       # （原有的第一句歷史寫入本地）
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
         if len(history) > 50: history = history[-50:]
         HIPPOCAMPUS_CACHE[channel_id] = history
 
-        asyncio.create_task(save_to_long_term_memory(channel_id, history))
+        # 🔧 調整 1：把原本的 create_task 改成 await，確保第一句記憶「確實存入雲端」後才往下走
+        await save_to_long_term_memory(channel_id, history)
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
         # --- 真人連發第二句機制 ---
@@ -464,12 +466,15 @@ async def on_message(message):
                 f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
             )
             
-            if random.random() < 0.5:
+            # 🎯 調整 2：
+            if random.random() < 0.7:
                 print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
+                # 強制直接從 Firebase 撈取最新記憶，不再進行退回海馬迴的檢查
                 history = await fetch_from_long_term_memory(channel_id)
-                if not history or history[-1].get("content") != bot_reply:
+                if not history: # 如果雲端真的完全沒資料（通常不可能），才用本地防呆
                     history = HIPPOCAMPUS_CACHE[channel_id]
             else:
+               
                 history = HIPPOCAMPUS_CACHE[channel_id]
                 
             second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": follow_up_prompt}]
@@ -480,7 +485,8 @@ async def on_message(message):
                 if len(history) > 50: history = history[-50:]
                 HIPPOCAMPUS_CACHE[channel_id] = history
                 
-                asyncio.create_task(save_to_long_term_memory(channel_id, history))
+                # 第二句發完後，同樣同步到雲端
+                await save_to_long_term_memory(channel_id, history)
                 
                 await asyncio.sleep(0.5)
                 await message.channel.send(second_reply, allowed_mentions=smart_mentions)
