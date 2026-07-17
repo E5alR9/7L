@@ -348,7 +348,7 @@ async def auto_chat_loop():
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心 (✨ 加入視覺動態觸發開關)
+# 4. 💬 訊息處理核心 (✨ 平行大腦開智版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -385,6 +385,12 @@ async def on_message(message):
         if not user_prompt and not message.attachments:
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
+
+        # 🌐 【⚡ 核心修改點 1】嘴巴還沒動，大腦一讀到訊息立刻在背景發動網路探針！
+        search_task = None
+        if user_prompt.strip():
+            print(f"【🌐 網路探針】7L 正在背景悄悄調查關鍵字：{user_prompt}")
+            search_task = asyncio.create_task(search_internet_meme(user_prompt))
 
         formatted_prompt = (
             f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
@@ -432,63 +438,71 @@ async def on_message(message):
 
         messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [immediate_user_msg]
         
+        # 生成第一句（此時完全不等待網路搜尋，速度拉滿）
         bot_reply = await fetch_ai_response(messages, require_vision=has_media)
 
         if bot_reply is None:
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
 
-        # 更新本地快取記憶
+        # 更新本地快取記憶（第一句對話）
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
         if len(history) > 50: history = history[-50:]
         HIPPOCAMPUS_CACHE[channel_id] = history
 
-        # 🚀 修正點 1：先讓 7L 直接秒回訊息，使用者不卡頓
+        # 🚀 先讓 7L 直接秒回第一句，使用者完全體感不到延遲
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-        # ☁️ 修正點 2：回完訊息後，立刻丟給背景 task 去同步雲端，不拖延速度
-        asyncio.create_task(save_to_long_term_memory(channel_id, history))
+        # ─── ⚡ 【核心修改點 2】大腦頓悟與連發的「非同步背景任務」 ───
+        async def background_enlightenment(task, should_trigger_second):
+            try:
+                # 1. 這裡才會真正等待背景搜尋結果（通常這時候早就查好了）
+                if task:
+                    web_knowledge = await task
+                else:
+                    web_knowledge = "無可查詢的文字內容。"
+                    
+                brain_insight = f"（🧠 7L 的雲端大腦聯想補完：關於使用者提到的「{user_prompt}」，網路上的真實意思是：\n{web_knowledge}）"
+                
+                # 2. ✨ 無痛開智：不管這次有沒有發第二句，都把新知識強行注入快取歷史
+                current_history = HIPPOCAMPUS_CACHE[channel_id]
+                current_history.append({"role": "user", "content": f"（系統記憶注入：{brain_insight}）"})
+                
+                # 3. 🎯 如果觸發 70% 機率，且有文字內容，就組織第二句連發
+                if should_trigger_second and user_prompt.strip():
+                    print(f"【🔮 頓悟連發】7L 成功聯想新知識，正在組織第二句反擊...")
+                    
+                    follow_up_prompt = (
+                        f"【系統提示】妳剛剛秒回了對方（妳回了：「{bot_reply}」）。"
+                        f"現在妳的雲端大腦剛剛查到了這個新知識：{brain_insight}。"
+                        f"請結合這個新知識，傲嬌地傳第二則短訊息補充（例如：突然看懂了對方的梗而吐槽、恍然大悟但嘴硬裝懂、或者用新學到的梗反擊對方）。"
+                        f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止出現任何括號或後台提示字眼！"
+                    )
+                    
+                    second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + current_history + [{"role": "user", "content": follow_up_prompt}]
+                    second_reply = await fetch_ai_response(second_messages)
+                    
+                    if second_reply:
+                        current_history.append({"role": "assistant", "content": second_reply})
+                        if len(current_history) > 50: current_history = current_history[-50:]
+                        HIPPOCAMPUS_CACHE[channel_id] = current_history
+                        
+                        # 噴出大徹大悟的第二句
+                        await message.channel.send(second_reply, allowed_mentions=smart_mentions)
+                
+                # 4. 💾 記憶大鞏固：統一在背景任務結束時把「帶有新知識」的記憶同步回 Firebase，防止寫入衝突
+                await save_to_long_term_memory(channel_id, current_history)
+                print(f"【💾 雲端開智成功】7L 已經徹底記住「{user_prompt}」並完成備份。")
+                
+            except Exception as e:
+                print(f"【⚠️ 背景開智失敗】: {e}")
 
-       # --- 真人連發第二句機制 (融入網路聯想與記憶鞏固) ---
-        if random.random() < 0.7:
-            # 🌐 【步驟 A】不影響第一句，現在背景偷偷聯想/上網查這個梗
-            print(f"【🌐 網路探針】7L 正在大腦暗處調查關鍵字：{user_prompt}")
-            web_knowledge = await search_internet_meme(user_prompt)
-            
-            # 🧠 【步驟 B】把查到的網頁資料，包裝成雲端海馬迴的「頓悟提示」
-            brain_insight = f"（🧠 7L 的雲端大腦聯想補完：關於使用者提到的「{user_prompt}」，網路上的真實意思是：\n{web_knowledge}）"
-            
-            follow_up_prompt = (
-                f"【系統提示（不可外洩）】妳剛剛秒回了對方。現在妳的雲端大腦剛剛聯想到了這個新知識：{brain_insight}。"
-                f"請結合這個新知識，傲嬌地傳第二則短訊息補充（例如：突然看懂了對方的梗而吐槽、恍然大悟但嘴硬裝懂、或者用新學到的梗反擊對方）。"
-                f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
-            )
-            
-            # 🎯 調整：高機率觸發「雲端深層回想」
-            if random.random() < 0.7:
-                print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
-                history = await fetch_from_long_term_memory(channel_id)
-                if not history: 
-                    history = HIPPOCAMPUS_CACHE[channel_id]
-            else:
-                history = HIPPOCAMPUS_CACHE[channel_id]
-            
-            # 💾 【步驟 C】把這個「新查到的知識」塞進歷史歷史紀錄，這樣她以後就「永遠記得」這個梗了！
-            history.append({"role": "user", "content": f"（系統記憶注入：{brain_insight}）"})
-                
-            second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": follow_up_prompt}]
-            second_reply = await fetch_ai_response(second_messages)
-            
-            if second_reply:
-                history.append({"role": "assistant", "content": second_reply})
-                if len(history) > 50: history = history[-50:]
-                HIPPOCAMPUS_CACHE[channel_id] = history
-                
-                # 🚀 秒發第二句，並異步鞏固記憶到 Firebase
-                await message.channel.send(second_reply, allowed_mentions=smart_mentions)
-                asyncio.create_task(save_to_long_term_memory(channel_id, history))
-                
+        # 決定這次要不要發第二句（70% 機率）
+        triggered_second = random.random() < 0.7
+        # 啟動背景開智任務（放生執行，主執行緒直接解放去聽別人的訊息）
+        asyncio.create_task(background_enlightenment(search_task, triggered_second))
+
     # ── 情況 B：純文字群聊旁聽 ──
     else:
         if message.content.strip():
