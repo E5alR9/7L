@@ -1,3 +1,4 @@
+import re
 import os
 import random
 import asyncio
@@ -18,7 +19,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # 這裡填寫你要她主動 @ 誰的「Discord 數字 ID」
 PING_TARGETS = [1364675732256854160] 
 # 如果有指定頻道，填入頻道 ID；若設為 None，她會隨機挑一個能發言的頻道
-AUTONOMOUS_CHANNEL_ID = 1519364216333533256 
+AUTONOMOUS_CHANNEL_ID = None 
 
 try:
     from groq import AsyncGroq
@@ -128,33 +129,79 @@ async def on_ready():
         print("【🧠 自主啟動】自主搭話計時器已開始運作！")
 
 # ────────────────────────────────────────────────────────
-# 3. 🧠 背景自主搭話任務 (每 30 分鐘觸發)
+# 3. 🧠 背景自主搭話任務 (每 30 分鐘觸發 - 頻道與目標雙重記憶版)
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
+    # 隨機延遲 5 到 15 分鐘，避免時間太固定被抓包是機器人
     random_sleep = random.randint(300, 900)
     await asyncio.sleep(random_sleep)
 
+    # 30% 機率才真正觸發搭話，保留傲嬌神祕感
     if random.random() > 0.3:
         return
 
-    channel = bot.get_channel(AUTONOMOUS_CHANNEL_ID) if AUTONOMOUS_CHANNEL_ID else None
-    if not channel:
-        for guild in bot.guilds:
-            valid_channels = [c for c in guild.text_channels if c.permissions_for(guild.me).send_messages]
-            if valid_channels:
-                channel = random.choice(valid_channels)
-                break
+    # 🎯 核心改良一：從最近聊天記憶中提取頻道 ID
+    recent_channel_ids = list(conversation_history.keys())
+    valid_channels = []
+
+    # 檢查這些有記憶的頻道，看機器人目前能不能在裡面發言
+    for cid in recent_channel_ids:
+        channel_obj = bot.get_channel(cid)
+        if channel_obj and channel_obj.permissions_for(channel_obj.guild.me).send_messages:
+            valid_channels.append(channel_obj)
+
+    channel = None
     
-    if not channel or not PING_TARGETS:
+    # 1. 如果「最近記憶」裡有聊過天的有效頻道，就從裡面隨機挑一個！
+    if valid_channels:
+        channel = random.choice(valid_channels)
+        print(f"【🧠 自主選擇】成功從記憶中挑選了最近互動過的頻道：{channel.name} ({channel.id})")
+    
+    # 2. 🚨 安全後備網：如果完全沒有最近記憶（例如機器人剛重啟、記憶體被清空時）
+    else:
+        all_valid_channels = []
+        for guild in bot.guilds:
+            all_valid_channels.extend([c for c in guild.text_channels if c.permissions_for(guild.me).send_messages])
+        if all_valid_channels:
+            channel = random.choice(all_valid_channels)
+            print(f"【🧠 自主備援】目前暫無最近聊天記憶，隨機挑選了可發言頻道：{channel.name}")
+    
+    # 如果真的找不到任何能說話的地方，直接退出
+    if not channel:
         return
 
-    lucky_user_id = random.choice(PING_TARGETS)
+    # 🎯 核心改良二：從該頻道的歷史紀錄中，找出最近跟她聊過天的人
+    lucky_user_id = None
+    channel_id = channel.id
+
+    if channel_id in conversation_history and conversation_history[channel_id]:
+        active_users = []
+        for msg in conversation_history[channel_id]:
+            if msg["role"] == "user":
+                # 從【發訊人資訊】中精準抓取類似 <@123456789> 的 Discord ID 數字
+                found_ids = re.findall(r'<@(\d+)>', msg["content"])
+                for uid in found_ids:
+                    active_users.append(int(uid))
+        
+        # 如果有成功抓到最近聊過天的人，就從裡面隨機挑一個當幸運兒！
+        if active_users:
+            lucky_user_id = random.choice(active_users)
+            print(f"【🧠 自主目標】成功從對話紀錄中抓到最近互動的使用者 ID：{lucky_user_id}")
+
+    # 🚨 安全後備網：如果該頻道剛好沒記憶（或重啟後全空），就使用你最上方設定的 PING_TARGETS
+    if not lucky_user_id:
+        if PING_TARGETS:
+            lucky_user_id = random.choice(PING_TARGETS)
+            print(f"【🧠 目標備援】目前暫無互動記憶，使用預設的後備 PING_TARGETS：{lucky_user_id}")
+        else:
+            # 如果連後備設定都沒有，就直接結束，避免報錯
+            print("【🚨 失敗】找不到任何可以 @ 的目標使用者，取消本次自主發言。")
+            return
+
     user_mention = f"<@{lucky_user_id}>"
     
     async with channel.typing():
-        channel_id = channel.id
-        
         autonomous_prompt = (
             f"【系統事件（不可對外洩漏）】妳現在在群組裡覺得有點無聊，想找 {user_mention} 聊天。 "
             f"請根據妳傲嬌的性格，主動向他搭話、分享心情或鬥嘴。 "
