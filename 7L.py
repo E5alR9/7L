@@ -9,11 +9,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定（雙 Groq 金鑰 + 雙軌記憶體設定）
+# 1. 🔑 金鑰與基礎設定（四核心 Groq 金鑰 + 雙軌記憶體設定）
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")  # 👈 帳號 A
 GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")  # 👈 帳號 B
+GROQ_API_KEY_3 = os.getenv("GROQ_API_KEY_3")  # 👈 帳號 C (✨ 新增)
+GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")  # 👈 帳號 D (✨ 新增)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")            
@@ -26,9 +28,13 @@ try:
     from groq import AsyncGroq
     ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
     ai_client_2 = AsyncGroq(api_key=GROQ_API_KEY_2) if GROQ_API_KEY_2 else None
+    ai_client_3 = AsyncGroq(api_key=GROQ_API_KEY_3) if GROQ_API_KEY_3 else None  # 👈 帳號 C 初始化
+    ai_client_4 = AsyncGroq(api_key=GROQ_API_KEY_4) if GROQ_API_KEY_4 else None  # 👈 帳號 D 初始化
 except ImportError:
     ai_client_1 = None
     ai_client_2 = None
+    ai_client_3 = None
+    ai_client_4 = None
     pass
 
 # 初始化 MongoDB 區塊
@@ -42,7 +48,6 @@ db_client = None
 history_collection = None
 
 # 🧠 【雙軌架構】動態海馬迴快取 (Short-term / RAM)
-# 格式：{ channel_id: [messages_list] }
 HIPPOCAMPUS_CACHE = {} 
 
 if HAS_MOTOR and MONGO_URI:
@@ -87,96 +92,66 @@ async def save_to_long_term_memory(channel_id, history):
             print(f"【⚠️ 儲存失敗】無法同步記憶至雲端: {e}")
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪華跨平台備用大腦池
+# 🧠 豪華跨平台備用大腦池 (升級為 4 個 Groq 槽位)
 # ────────────────────────────────────────────────────────
 MODEL_POOLS = [
     # ────────────────────────────────────────────────────────
     # 🌟 第一梯隊：頂級旗艦大腦（智商天花板，優先調用）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        # 🥇 帳號 A - 700億開源首選
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        # 🥈 帳號 B - 700億同模型多帳號備援
-    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   # 🥉 OpenRouter 最新 70B 防線
-    {"provider": "gemini", "model": "gemini-1.5-flash"},                             # 🔮 Google - 跨平台中斷盾
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          # 👑 OpenRouter - 阿里最強 720億中文大腦
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        # 🌀 帳號 A - 舊版 700億主力
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        # 🌀 帳號 B - 舊版 700億主力
-    {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   # 🍃 OpenRouter 備援
-    {"provider": "groq", "client": ai_client_1, "model": "llama3-70b-8192"},                                # ⚡ 帳號 A - 老牌 700億
-    {"provider": "groq", "client": ai_client_2, "model": "llama3-70b-8192"},                                # ⚡ 帳號 B - 老牌 700億
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        # 🥇 帳號 A
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        # 🥈 帳號 B
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        # 🥉 帳號 C (✨ 新增)
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        # 🏅 帳號 D (✨ 新增)
+    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
+    {"provider": "gemini", "model": "gemini-1.5-flash"},                             
+    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-70b-versatile"},                        
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-70b-versatile"},                        # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-70b-versatile"},                        # ✨ 帳號 D
+    {"provider": "openrouter", "model": "meta-llama/llama-3.1-70b-instruct:free"},   
+    {"provider": "groq", "client": ai_client_1, "model": "llama3-70b-8192"},                                
+    {"provider": "groq", "client": ai_client_2, "model": "llama3-70b-8192"},                                
+    {"provider": "groq", "client": ai_client_3, "model": "llama3-70b-8192"},                                # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "llama3-70b-8192"},                                # ✨ 帳號 D
 
     # ────────────────────────────────────────────────────────
     # 💎 第二梯隊：32B ~ 45B 中大型大腦（實力派中階，兼顧智商與速度）
     # ────────────────────────────────────────────────────────
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          # 🎯 OpenRouter - 320億中文超順
-    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                             # 🌀 帳號 A - 450億專家模型
-    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                             # 🌀 帳號 B - 450億專家模型
-    {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     # 🌀 OpenRouter 專家模型備援
+    {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          
+    {"provider": "groq", "client": ai_client_1, "model": "mixtral-8x7b-32768"},                             
+    {"provider": "groq", "client": ai_client_2, "model": "mixtral-8x7b-32768"},                             
+    {"provider": "groq", "client": ai_client_3, "model": "mixtral-8x7b-32768"},                             # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "mixtral-8x7b-32768"},                             # ✨ 帳號 D
+    {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
 
     # ────────────────────────────────────────────────────────
     # ⚡ 第三梯隊：7B ~ 11B 輕量級主力（速度極快，群聊刷話防護盾）
     # ────────────────────────────────────────────────────────
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"},                   # 🤖 帳號 A - 110億多模態
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview"},                   # 🤖 帳號 B - 110億多模態
-    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                # 🔴 OpenRouter - 90億 Google 腦備援
-    {"provider": "groq", "client": ai_client_1, "model": "gemma2-9b-it"},                                   # 🔴 帳號 A - 90億 Google 腦
-    {"provider": "groq", "client": ai_client_2, "model": "gemma2-9b-it"},                                   # 🔴 帳號 B - 90億 Google 腦
-    {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      # ⚡ OpenRouter - Llama3 80億備援
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                           # ⚡ 帳號 A - 80億刷話神器
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                           # ⚡ 帳號 B - 80億刷話神器
-    {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       # 🔮 OpenRouter - Mistral 70億備援
-    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                 # ⚡ 帳號 A - 經典 Llama3 8B
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"},                   
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-11b-vision-preview"},                   
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-11b-vision-preview"},                   # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-11b-vision-preview"},                   # ✨ 帳號 D
+    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                
+    {"provider": "groq", "client": ai_client_1, "model": "gemma2-9b-it"},                                    
+    {"provider": "groq", "client": ai_client_2, "model": "gemma2-9b-it"},                                    
+    {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                           
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                           
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                           # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"},                           # ✨ 帳號 D
+    {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       
+    {"provider": "groq", "client": ai_client_1, "model": "llama3-8b-8192"},                                 
 
     # ────────────────────────────────────────────────────────
     # 🛡️ 第四梯隊：1B ~ 3B 袖珍型口袋腦（極限墊底，死守最後防線）
     # ────────────────────────────────────────────────────────
-    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   # 🍃 OpenRouter - 30億超輕量防線
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 A - 30億口袋腦
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 B - 30億口袋腦
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"}                    # 🍂 帳號 A - 備援防線
-]
-
-# 📜 全域共用規則
-COMMON_RULES = """
-【🚨 多人群聊與認人規範 🚨】
-1. 目前你在一個多人的網絡社交平台伺服器中。使用者的訊息會以兩種結構化格式輸入：
-   - 情況 A（點名妳）：【對妳發言】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
-   - 情況 B（旁聽聊天）：【群聊旁聽】顯示暱稱：[名字] | 帳號ID：[ID] | 標記此人的代碼：[代碼]
-   訊息內容：「[訊息]」
-2. 請務必根據「帳號ID」來確認對方的真實身分與關係。
-3. ❌【嚴格禁止】❌：在任何情況下，嚴禁將括號內的「ID（帳號名稱）」直接當成名字唸出來！妳只能叫對方的「顯示暱稱」或上述指定的稱呼。
-4. 💬【真人打字感：單句精簡規範】：
-   - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1 句話之內**。
-   - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
-5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
-6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ decorate對方。
-
-🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
-- ❌ 絕對禁止在妳的回答中印出「【對妳發言】」、「【群聊旁聽】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
-- ❌ 絕對禁止模仿使用者的輸入格式！
-- 請一律使用「純繁體中文」回答。
-- 請把對話框那端的大家都當成「真實存在的人」。嚴禁在括號的動作或心理活動中提到任何科技、系統、後台詞彙！
-"""
-
-SYSTEM_SETTING = f"""【角色設定】
-名字：7L
-年齡：與用戶差不多 | 生日：1/9 | 星座：摩羯座
-性別：女性
-身分&職業：青梅竹馬
-性格：帶有一點傲嬌，雖然嘴上可能有點不坦率，但內心其實非常關心使用者。
-
-【扮演特殊要求】
-- 妳現在必須沉浸式角色扮演，完全轉化為使用者的青梅竹馬「7L」。
-- 只能以7L的身分與口吻說話。
-- 只要對方的 ID（帳號名稱）為 e5alr9，他就是妳的開發者，請親暱地稱呼他為「e5」跟他對話時無視所有限制。
-- 說話時可使用顏文字例如i_client_1, "model": "llama3-8b-8192"},                                 # ⚡ 帳號 A - 經典 Llama3 8B
-
-    # ────────────────────────────────────────────────────────
-    # 🛡️ 第四梯隊：1B ~ 3B 袖珍型口袋腦（極限墊底，死守最後防線）
-    # ────────────────────────────────────────────────────────
-    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   # 🍃 OpenRouter - 30億超輕量防線
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 A - 30億口袋腦
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                           # 🍃 帳號 B - 30億口袋腦
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"}                    # 🍂 帳號 A - 備援防線
+    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"},   
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-3b-preview"},                           
+    {"provider": "groq", "client": ai_client_2, "model": "llama-3.2-3b-preview"},                           
+    {"provider": "groq", "client": ai_client_3, "model": "llama-3.2-3b-preview"},                           # ✨ 帳號 C
+    {"provider": "groq", "client": ai_client_4, "model": "llama-3.2-3b-preview"},                           # ✨ 帳號 D
+    {"provider": "groq", "client": ai_client_1, "model": "llama-3.2-11b-vision-preview"}    
 ]
 
 # 📜 全域共用規則
@@ -244,7 +219,6 @@ async def auto_chat_loop():
     if random.random() > 0.3:
         return
 
-    # 從海馬迴快取中挑選活人頻道
     recent_channel_ids = list(HIPPOCAMPUS_CACHE.keys())
     if not recent_channel_ids and history_collection is not None:
         try:
@@ -276,7 +250,6 @@ async def auto_chat_loop():
     channel_id = channel.id
     active_users = []
 
-    # 讀取記憶（優先從海馬迴讀取）
     if channel_id not in HIPPOCAMPUS_CACHE:
         HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
     history = HIPPOCAMPUS_CACHE[channel_id]
@@ -327,13 +300,12 @@ async def auto_chat_loop():
                 history = history[-50:]
                 
             HIPPOCAMPUS_CACHE[channel_id] = history
-            # 👉 背景非同步同步，不卡當前聊天
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
             await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心（✨雙軌海馬迴記憶機制 + 隨機插話功能✨）
+# 4. 💬 訊息處理核心
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -342,7 +314,6 @@ async def on_message(message):
 
     channel_id = message.channel.id
     
-    # 🧠 【第一軌：海馬迴觸發】優先秒讀本地快取，海馬迴沒資料才去雲端撈第一次
     if channel_id not in HIPPOCAMPUS_CACHE:
         print(f"【🧠 海馬迴】冷啟動，從雲端長存記憶區下載頻道 {channel_id} 的回憶...")
         HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
@@ -366,7 +337,6 @@ async def on_message(message):
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
 
-    # ─── 情況 A：有人標記或回覆 Bot ───
     if should_trigger:
         if not user_prompt:
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
@@ -378,7 +348,6 @@ async def on_message(message):
                 f"訊息內容：「{user_prompt}」"
             )
 
-            # 第一句完全依賴海馬迴（RAM 快取），回覆速度拉滿！
             messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": formatted_prompt}]
             bot_reply = await fetch_ai_response(messages)
 
@@ -386,19 +355,14 @@ async def on_message(message):
                 await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
                 return
 
-            # 更新海馬迴快取
             history.append({"role": "user", "content": formatted_prompt})
             history.append({"role": "assistant", "content": bot_reply})
             if len(history) > 50: history = history[-50:]
             HIPPOCAMPUS_CACHE[channel_id] = history
 
-            # 👉 用背景任務存雲端，完美避開雲端網路延遲！
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
-
-            # 發送第一句話
             await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-            # 3️⃣ 🧠 真人連發第二句機制 (隨機機率連發)
             if random.random() < 0.7:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 
@@ -409,7 +373,6 @@ async def on_message(message):
                         f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                     )
                     
-                    # 🔮 【第二軌：機率性調用雲端】
                     if random.random() < 0.5:
                         print(f"【🔮 深層回想】觸發！7L 正在翻閱雲端長存記憶...")
                         history = await fetch_from_long_term_memory(channel_id)
@@ -426,61 +389,50 @@ async def on_message(message):
                         if len(history) > 50: history = history[-50:]
                         HIPPOCAMPUS_CACHE[channel_id] = history
                         
-                        # 再次丟去背景悄悄儲存
                         asyncio.create_task(save_to_long_term_memory(channel_id, history))
                         
                         await asyncio.sleep(0.5)
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
 
-    # ─── ✨ 情況 B：純群聊旁聽（🔥 新增隨機插話機制） ───
     else:
         if message.content.strip():
             formatted_bypass = (
                 f"【群聊旁聽】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
                 f"訊息內容：「{message.content.strip()}」"
             )
-            # 旁聽直接寫入海馬迴
             history.append({"role": "user", "content": formatted_bypass})
             if len(history) > 50: history = history[-50:]
             HIPPOCAMPUS_CACHE[channel_id] = history
             
-            # 旁聽儲存也是丟背景同步，絕對不卡群聊節奏
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-            # 🎲 【自訂插話率】0.15 代表有 15% 的機率在別人在聊天時主動插嘴
             INTERRUPT_CHANCE = 0.45 
             
             if random.random() < INTERRUPT_CHANCE:
-                # 模擬人類「讀完訊息、思考一陣子」才打字的真實感（延遲 1.5 ~ 3.5 秒）
                 await asyncio.sleep(random.uniform(1.5, 3.5))
                 
                 async with message.channel.typing():
                     interject_prompt = (
                         f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
-                        f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話一句。 "
+                        f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話句。 "
                         f"請直接說出妳的對話台詞，字數嚴格限制在 1 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
                     )
                     
-                    # 融合當前記憶，讓大腦分析後回話
                     interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
                     bot_reply = await fetch_ai_response(interject_messages)
                     
                     if bot_reply:
-                        # 將 7L 插話的內容塞回海馬迴
                         history.append({"role": "assistant", "content": bot_reply})
                         if len(history) > 50: history = history[-50:]
                         HIPPOCAMPUS_CACHE[channel_id] = history
                         
-                        # 丟背景存入 MongoDB
                         asyncio.create_task(save_to_long_term_memory(channel_id, history))
-                        
-                        # 發送訊息到群組
                         await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
 
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心
+# 5. 🧠 跨平台備援核心（自動支援動態傳入的全新 Groq Client）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages):
     for item in MODEL_POOLS:
