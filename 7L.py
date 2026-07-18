@@ -1365,19 +1365,30 @@ async def check_all_apis(ctx):
         if not key: 
             return f"Groq-{index:02d}", "⚪ 未設定", "-"
         
-        if index in GROQ_KEY_COOLDOWNS:
-            rem = GROQ_KEY_COOLDOWNS[index] - current_time
-            if rem > 0:
-                return f"Groq-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
+        # 🔍 搜查這把金鑰被鎖了哪些模型
+        locked_models = []
+        prefix = f"{index}_"
+        for k, v in list(GROQ_KEY_COOLDOWNS.items()):
+            if k.startswith(prefix):
+                rem = v - current_time
+                if rem > 0:
+                    model_name = k.split("_", 1)[1].split('/')[-1] # 取短檔名
+                    locked_models.append(f"{model_name}({int(rem)}s)")
+                else:
+                    del GROQ_KEY_COOLDOWNS[k] # 順手清理過期的鎖
+                    
+        lock_memo = f"🔒鎖定: {', '.join(locked_models)} | " if locked_models else ""
                 
         url = "https://api.groq.com/openai/v1/models"
         headers = {"Authorization": f"Bearer {key}"}
         try:
             async with session.get(url, headers=headers, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Groq-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
+                    status = "🟡 模型冷卻中" if locked_models else "🟢 200 可用"
+                    return f"Groq-{index:02d}", status, f"{lock_memo}尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
-                    return f"Groq-{index:02d}", "🛑 429 限流", "額度已滿"
+                    # ✨ 真實 API 乾了，顯示已用完，但不加鎖，讓它自己解開
+                    return f"Groq-{index:02d}", "🛑 已用完 (429)", f"{lock_memo}請等待模型鎖自然解開"
                 elif resp.status == 401:
                     return f"Groq-{index:02d}", "❌ 401 無效", "請檢查金鑰"
                 else: 
@@ -1390,10 +1401,18 @@ async def check_all_apis(ctx):
         if not key: 
             return f"OpenRouter-{index:02d}", "⚪ 未設定", "-"
             
-        if (index - 1) in OPENROUTER_KEY_COOLDOWNS:
-            rem = OPENROUTER_KEY_COOLDOWNS[index - 1] - current_time
-            if rem > 0:
-                return f"OpenRouter-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
+        locked_models = []
+        prefix = f"{index - 1}_" # OpenRouter 在後台是用 0-based index
+        for k, v in list(OPENROUTER_KEY_COOLDOWNS.items()):
+            if k.startswith(prefix):
+                rem = v - current_time
+                if rem > 0:
+                    model_name = k.split("_", 1)[1].split('/')[-1]
+                    locked_models.append(f"{model_name}({int(rem)}s)")
+                else:
+                    del OPENROUTER_KEY_COOLDOWNS[k]
+                    
+        lock_memo = f"🔒鎖定: {', '.join(locked_models)} | " if locked_models else ""
                 
         url = "https://openrouter.ai/api/v1/auth/key"
         headers = {"Authorization": f"Bearer {key}"}
@@ -1403,9 +1422,10 @@ async def check_all_apis(ctx):
                     data = await resp.json()
                     rem_usd = data.get("data", {}).get("limit_remaining")
                     rem_str = f"剩餘: {rem_usd:.4f} USD" if rem_usd is not None else "額度正常"
-                    return f"OpenRouter-{index:02d}", "🟢 200 可用", rem_str
+                    status = "🟡 模型冷卻中" if locked_models else "🟢 200 可用"
+                    return f"OpenRouter-{index:02d}", status, f"{lock_memo}{rem_str}"
                 elif resp.status == 429: 
-                    return f"OpenRouter-{index:02d}", "🛑 429 限流", "頻率過高"
+                    return f"OpenRouter-{index:02d}", "🛑 已用完 (429)", f"{lock_memo}請等待模型鎖自然解開"
                 else: 
                     return f"OpenRouter-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
@@ -1422,29 +1442,38 @@ async def check_all_apis(ctx):
                 if resp.status == 200: 
                     return f"Tavily-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
                 elif resp.status in [429, 403]: 
-                    return f"Tavily-{index:02d}", "🛑 429/403 滿", "免費額度耗盡"
+                    return f"Tavily-{index:02d}", "🛑 已用完 (429)", "免費額度耗盡"
                 else: 
                     return f"Tavily-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
             return f"Tavily-{index:02d}", "💥 連線異常", "Timeout/網路失敗"
 
-    # 4. 偵測 Gemini 狀態與內部監獄狀況 (✨ 全面升級多金鑰排查)
+    # 4. 偵測 Gemini 狀態與內部監獄狀況
     async def check_gemini(session, key, index):
         if not key: 
             return f"Gemini-{index:02d}", "⚪ 未設定", "-"
             
-        if (index - 1) in GEMINI_KEY_COOLDOWNS:
-            rem = GEMINI_KEY_COOLDOWNS[index - 1] - current_time
-            if rem > 0:
-                return f"Gemini-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
+        locked_models = []
+        prefix = f"{index - 1}_" # Gemini 也是 0-based index
+        for k, v in list(GEMINI_KEY_COOLDOWNS.items()):
+            if k.startswith(prefix):
+                rem = v - current_time
+                if rem > 0:
+                    model_name = k.split("_", 1)[1].split('/')[-1]
+                    locked_models.append(f"{model_name}({int(rem)}s)")
+                else:
+                    del GEMINI_KEY_COOLDOWNS[k]
+                    
+        lock_memo = f"🔒鎖定: {', '.join(locked_models)} | " if locked_models else ""
                 
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
         try:
             async with session.get(url, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Gemini-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
+                    status = "🟡 模型冷卻中" if locked_models else "🟢 200 可用"
+                    return f"Gemini-{index:02d}", status, f"{lock_memo}尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
-                    return f"Gemini-{index:02d}", "🛑 429 限流", "請稍候再試"
+                    return f"Gemini-{index:02d}", "🛑 已用完 (429)", f"{lock_memo}請等待模型鎖自然解開"
                 else: 
                     return f"Gemini-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
@@ -1459,7 +1488,6 @@ async def check_all_apis(ctx):
             tasks.append(check_openrouter(session, key, idx))
         for idx, key in enumerate(TAVILY_KEYS, 1):
             tasks.append(check_tavily(session, key, idx))
-        # 💡 修正：改成迴圈掃描所有 Gemini 金鑰，不再只孤零零戳第一把
         for idx, key in enumerate(GEMINI_KEYS, 1):
             tasks.append(check_gemini(session, key, idx))
         
@@ -1504,7 +1532,7 @@ async def check_all_apis(ctx):
                 for name, status, memo in cat_results:
                     # 🛡️ 終極防護：強制把太長的錯誤訊息截斷，並拿掉換行符號避免破壞表格
                     safe_memo = str(memo).replace('\n', ' ')[:80] + ("..." if len(str(memo)) > 80 else "")
-                    row = f"{name:<14} | {status:<14} | {safe_memo}\n"
+                    row = f"{name:<14} | {status:<15} | {safe_memo}\n"
                     
                     # ✂️ 雙重極限防護：萬一單一分類超過 Discord 上限，自動在內部續接
                     if len(current_chunk) + len(row) > 1850:
