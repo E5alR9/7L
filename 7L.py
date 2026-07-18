@@ -901,6 +901,136 @@ def run_backup_server():
     server = HTTPServer(('0.0.0.0', port), DummyServer)
     server.serve_forever()
 
+
+# ────────────────────────────────────────────────────────
+# 📊 ✨ 新增：金鑰即時健康檢查指令 (完美融合 7L 監獄與輪詢系統)
+# ────────────────────────────────────────────────────────
+@bot.command(name="api")
+@commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
+async def check_all_apis(ctx):
+    msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
+    
+    # 讀取妳在 7L (6).py 最上方設定好的 10 組 Groq 金鑰
+    groq_keys = [
+        GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3, GROQ_API_KEY_4, GROQ_API_KEY_5,
+        GROQ_API_KEY_6, GROQ_API_KEY_7, GROQ_API_KEY_8, GROQ_API_KEY_9, GROQ_API_KEY_10
+    ]
+    
+    current_time = time.time()
+
+    # 1. 偵測 Groq 狀態與內部監獄狀況
+    async def check_groq(session, key, index):
+        if not key: 
+            return f"Groq-{index:02d}", "⚪ 未設定", "-"
+        
+        # 檢查 7L 的 Groq 監獄狀態
+        if index in GROQ_KEY_COOLDOWNS:
+            rem = GROQ_KEY_COOLDOWNS[index] - current_time
+            if rem > 0:
+                return f"Groq-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                
+        url = "https://api.groq.com/openai/v1/models"
+        headers = {"Authorization": f"Bearer {key}"}
+        try:
+            async with session.get(url, headers=headers, timeout=4) as resp:
+                if resp.status == 200: 
+                    return f"Groq-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                elif resp.status == 429: 
+                    return f"Groq-{index:02d}", "🛑 429 限流", "額度已滿"
+                elif resp.status == 401:
+                    return f"Groq-{index:02d}", "❌ 401 無效", "請檢查金鑰"
+                else: 
+                    return f"Groq-{index:02d}", f"❌ {resp.status} 錯誤", ""
+        except Exception: 
+            return f"Groq-{index:02d}", "💥 連線異常", "Timeout/網路失敗"
+
+    # 2. 偵測 OpenRouter 狀態與內部監獄狀況
+    async def check_openrouter(session, key, index):
+        if not key: 
+            return f"OpenRouter-{index}", "⚪ 未設定", "-"
+            
+        # 檢查 7L 的 OpenRouter 監獄狀態
+        if (index - 1) in OPENROUTER_KEY_COOLDOWNS:
+            rem = OPENROUTER_KEY_COOLDOWNS[index - 1] - current_time
+            if rem > 0:
+                return f"OpenRouter-{index}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                
+        url = "https://openrouter.ai/api/v1/key"
+        headers = {"Authorization": f"Bearer {key}"}
+        try:
+            async with session.get(url, headers=headers, timeout=4) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    rem_usd = data.get("data", {}).get("limit_remaining")
+                    rem_str = f"剩餘: {rem_usd:.4f} USD" if rem_usd is not None else "額度正常"
+                    return f"OpenRouter-{index}", "🟢 200 OK", rem_str
+                elif resp.status == 429: 
+                    return f"OpenRouter-{index}", "🛑 429 限流", "頻率過高"
+                else: 
+                    return f"OpenRouter-{index}", f"❌ {resp.status} 錯誤", ""
+        except Exception: 
+            return f"OpenRouter-{index}", "💥 連線異常", ""
+
+    # 3. 偵測 Tavily 狀態
+    async def check_tavily(session, key, index):
+        if not key: 
+            return f"Tavily-{index}", "⚪ 未設定", "-"
+        url = "https://api.tavily.com/search"
+        payload = {"api_key": key, "query": "ping", "max_results": 1}
+        try:
+            async with session.post(url, json=payload, timeout=4) as resp:
+                if resp.status == 200: 
+                    return f"Tavily-{index}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                elif resp.status in [429, 403]: 
+                    return f"Tavily-{index}", "🛑 429/403 滿", "免費額度耗盡"
+                else: 
+                    return f"Tavily-{index}", f"❌ {resp.status} 錯誤", ""
+        except Exception: 
+            return f"Tavily-{index}", "💥 連線異常", ""
+
+    # 4. 偵測 Gemini 狀態
+    async def check_gemini(session, key):
+        if not key: 
+            return "Gemini-1", "⚪ 未設定", "-"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+        try:
+            async with session.get(url, timeout=4) as resp:
+                if resp.status == 200: 
+                    return "Gemini-1", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                elif resp.status == 429: 
+                    return "Gemini-1", "🛑 429 限流", "請稍候再試"
+                else: 
+                    return "Gemini-1", f"❌ {resp.status} 錯誤", ""
+        except Exception: 
+            return "Gemini-1", "💥 連線異常", ""
+
+    # 併發非同步發送所有盲測請求
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for idx, key in enumerate(groq_keys, 1):
+            tasks.append(check_groq(session, key, idx))
+        for idx, key in enumerate(OPENROUTER_KEYS, 1):
+            tasks.append(check_openrouter(session, key, idx))
+        for idx, key in enumerate(TAVILY_KEYS, 1):
+            tasks.append(check_tavily(session, key, idx))
+        tasks.append(check_gemini(session, GEMINI_API_KEY))
+        
+        results = await asyncio.gather(*tasks)
+        
+        # 繪製美觀的 Markdown 表格
+        report = ["**🔮 【7L 全線 API 金鑰健康矩陣】**", "```markdown"]
+        report.append(f"{'API 項目':<14} | {'狀態狀況':<14} | {'備註 / 剩餘資訊'}")
+        report.append("-" * 55)
+        for name, status, memo in results:
+            report.append(f"{name:<14} | {status:<14} | {memo}")
+        report.append("```")
+        
+        await msg.edit(content="\n".join(report))
+
+
+# ────────────────────────────────────────────────────────
+# 🚀 程式執行入口 (確保 bot.run 一定放在整份檔案的最後一行)
+# ────────────────────────────────────────────────────────
 if __name__ == "__main__":
     server_thread = threading.Thread(target=run_backup_server)
     server_thread.daemon = True
@@ -911,162 +1041,3 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         print("【錯誤】找不到 DISCORD_TOKEN_7L，請確認環境變數是否設定正確！")
-#────────────────────────────────────────────────────────
-# API checker
-#────────────────────────────────────────────────────────
-import os
-import asyncio
-import aiohttp
-
-# ────────────────────────────────────────────────────────
-# 🔑 讀取與妳機器人完全一致的環境變數
-# ────────────────────────────────────────────────────────
-GROQ_KEYS = [os.getenv(f"GROQ_API_KEY_{i}") for i in range(1, 11)]
-
-openrouter_env = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_KEYS = [k.strip() for k in openrouter_env.split(",") if k.strip()]
-
-tavily_env = os.getenv("TAVILY_KEYS", "")
-TAVILY_KEYS = [k.strip() for k in tavily_env.split(",") if k.strip()]
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# ────────────────────────────────────────────────────────
-# 📡 各平台檢測核心邏輯 (只偵測狀態，不消耗對話額度)
-# ────────────────────────────────────────────────────────
-async def check_groq(session, key, index):
-    if not key:
-        return f"Groq-{index:02d}", "⚪ 未設定", "-"
-    url = "https://api.groq.com/openai/v1/models"
-    headers = {"Authorization": f"Bearer {key}"}
-    try:
-        async with session.get(url, headers=headers, timeout=5) as resp:
-            if resp.status == 200:
-                return f"Groq-{index:02d}", "🟢 200 OK (正常)", f"尾碼: ...{key[-6:]}"
-            elif resp.status == 429:
-                return f"Groq-{index:02d}", "🛑 429 (限流/額度滿)", f"尾碼: ...{key[-6:]}"
-            elif resp.status == 401:
-                return f"Groq-{index:02d}", "❌ 401 (金鑰無效)", "請檢查 Key 是否被刪除"
-            else:
-                return f"Groq-{index:02d}", f"❓ {resp.status} 錯誤", f"狀態碼: {resp.status}"
-    except Exception as e:
-        return f"Groq-{index:02d}", "💥 連線異常", str(e)[:15]
-
-async def check_openrouter(session, key, index):
-    if not key:
-        return f"OpenRouter-{index}", "⚪ 未設定", "-"
-    # OpenRouter 專用查詢接口，還能順便看剩下多少錢！
-    url = "https://openrouter.ai/api/v1/key"
-    headers = {"Authorization": f"Bearer {key}"}
-    try:
-        async with session.get(url, headers=headers, timeout=5) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                key_data = data.get("data", {})
-                rem = key_data.get("limit_remaining")
-                rem_str = f"剩餘: {rem} USD" if rem is not None else "無金鑰限額"
-                return f"OpenRouter-{index}", "🟢 200 OK (正常)", rem_str
-            elif resp.status == 402:
-                return f"OpenRouter-{index}", "🛑 402 (儲值不足/歸零)", "需要入金"
-            elif resp.status == 429:
-                return f"OpenRouter-{index}", "🛑 429 (限流中)", "頻率過高"
-            else:
-                return f"OpenRouter-{index}", f"❌ {resp.status} 錯誤", f"狀態碼: {resp.status}"
-    except Exception as e:
-        return f"OpenRouter-{index}", "💥 連線異常", str(e)[:15]
-
-async def check_tavily(session, key, index):
-    if not key:
-        return f"Tavily-{index}", "⚪ 未設定", "-"
-    url = "https://api.tavily.com/search"
-    # Tavily 需要發送一個最小化的搜尋請求來盲測
-    payload = {"api_key": key, "query": "ping", "max_results": 1}
-    try:
-        async with session.post(url, json=payload, timeout=5) as resp:
-            if resp.status == 200:
-                return f"Tavily-{index}", "🟢 200 OK (正常)", f"尾碼: ...{key[-6:]}"
-            elif resp.status in [429, 403]:
-                return f"Tavily-{index}", "🛑 429/403 (額度耗盡)", "免費額度已滿"
-            else:
-                return f"Tavily-{index}", f"❌ {resp.status} 錯誤", f"狀態碼: {resp.status}"
-    except Exception as e:
-        return f"Tavily-{index}", "💥 連線異常", str(e)[:15]
-
-async def check_gemini(session, key):
-    if not key:
-        return "Gemini-1", "⚪ 未設定", "-"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
-    try:
-        async with session.get(url, timeout=5) as resp:
-            if resp.status == 200:
-                return "Gemini-1", "🟢 200 OK (正常)", f"尾碼: ...{key[-6:]}"
-            elif resp.status == 429:
-                return "Gemini-1", "🛑 429 (限流中)", "請稍候再試"
-            else:
-                return "Gemini-1", f"❌ {resp.status} 錯誤", f"狀態碼: {resp.status}"
-    except Exception as e:
-        return "Gemini-1", "💥 連線異常", str(e)[:15]
-
-# ────────────────────────────────────────────────────────
-# 🎬 主執行排版程序
-# ────────────────────────────────────────────────────────
-async def main():
-    print("🔮 【金鑰健康檢查矩陣】開始同步探測全線 API 狀況...\n")
-    
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        
-        # 1. 帶入 10 組 Groq
-        for idx, key in enumerate(GROQ_KEYS, 1):
-            tasks.append(check_groq(session, key, idx))
-            
-        # 2. 帶入 OpenRouter 陣列
-        for idx, key in enumerate(OPENROUTER_KEYS, 1):
-            tasks.append(check_openrouter(session, key, idx))
-            
-        # 3. 帶入 Tavily 探針陣列
-        for idx, key in enumerate(TAVILY_KEYS, 1):
-            tasks.append(check_tavily(session, key, idx))
-            
-        # 4. 帶入 Gemini 金鑰
-        tasks.append(check_gemini(session, GEMINI_API_KEY))
-        
-        # 併發執行所有連線請求（速度極快）
-        results = await asyncio.gather(*tasks)
-        
-        # 排版輸出 Markdown 表格
-        print("| API 項目 | 狀態狀況 | 備註 / 剩餘資訊 |")
-        print("| :--- | :--- | :--- |")
-        for name, status, memo in results:
-            print(f"| {name} | {status} | {memo} |")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-@bot.command(name="api")
-@commands.is_owner()  # ✨ 強烈建議加上擁有者限制，避免路人亂玩或看到妳的金鑰資訊
-async def check_all_apis(ctx):
-    msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，請稍候...")
-    
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        # 同方法一的 tasks.append 邏輯...
-        for idx, key in enumerate(GROQ_KEYS, 1): tasks.append(check_groq(session, key, idx))
-        for idx, key in enumerate(OPENROUTER_KEYS, 1): tasks.append(check_openrouter(session, key, idx))
-        for idx, key in enumerate(TAVILY_KEYS, 1): tasks.append(check_tavily(session, key, idx))
-        tasks.append(check_gemini(session, GEMINI_API_KEY))
-        
-        results = await asyncio.gather(*tasks)
-        
-        # 組合 Discord 的 Markdown 訊息
-        report = ["**🔮 【金鑰即時健康狀態檢查】**", "```markdown"]
-        report.append(f"{'API 項目':<15} | {'狀態狀況':<18} | {'備註 / 剩餘資訊'}")
-        report.append("-" * 55)
-        for name, status, memo in results:
-            report.append(f"{name:<15} | {status:<18} | {memo}")
-        report.append("```")
-        
-        await msg.edit(content="\n".join(report))
-
-
-
