@@ -132,10 +132,6 @@ async def fetch_from_long_term_memory(channel_id):
                     history.append({"role": "system", "content": f"【長存記憶標籤】：{summary_tags}"})
             
             # 2. 📥 決定要不要下載「完整對話」層
-            # 正常情況下，我們還是需要最近的幾句話來接續對話。
-            # (如果未來要實作更進階的 AI 語意比對，可以在這裡加入判斷邏輯，
-            # 例如：比對 summary_tags 決定要不要去抓特定的舊對話)
-            
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
@@ -147,6 +143,13 @@ async def fetch_from_long_term_memory(channel_id):
         except Exception as e:
             print(f"【⚠️ 讀取失敗】無法自雲端讀取頻道 {channel_id} 的長存記憶: {e}")
     return []
+
+# 🛠️ 輔助函式：用來安全提取多模態 (Vision) 或純文字的內容
+def extract_text_from_content(content):
+    if isinstance(content, str): return content
+    if isinstance(content, list):
+        return " ".join([p["text"] for p in content if p.get("type") == "text"])
+    return ""
 
 async def save_to_long_term_memory(channel_id, history):
     # 限制上傳的對話長度，避免無止盡膨脹 (維持最近的 15 筆)
@@ -166,8 +169,9 @@ async def save_to_long_term_memory(channel_id, history):
             # 2. 🧠 背景開智：自動生成對話摘要標籤 (不阻塞主流程)
             async def generate_and_save_tags(cid, recent_chat):
                 try:
-                    # 把對話轉成純文字，讓小模型看得懂
-                    chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_chat if isinstance(msg['content'], str)])
+                    # ✨ 修正：支援多模態文字提取，防止圖片對話被丟棄
+                    chat_text = "\n".join([f"{msg['role']}: {extract_text_from_content(msg['content'])}" for msg in recent_chat if extract_text_from_content(msg['content']).strip()])
+                    
                     if len(chat_text.strip()) < 20: 
                         return # 對話太短就不浪費資源總結了
                     
@@ -193,14 +197,12 @@ async def save_to_long_term_memory(channel_id, history):
 
             # ⚡ 使用 asyncio.create_task 在背景執行，不會卡住前台機器人聊天速度
             asyncio.create_task(generate_and_save_tags(channel_id, clean_history))
-            # ✨ 補上這行：觸發每日去重濃縮日記任務！
+            # ✨ 觸發每日去重濃縮日記任務！
             asyncio.create_task(update_daily_diary(channel_id, clean_history))
             
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
             
-
-
 async def update_daily_diary(channel_id, recent_chat):
     """🧠 每日核心日記系統：自動去重、高強度濃縮，以 YYYY-MM-DD 為 ID 寫入雲端日記"""
     if db is None: return
@@ -210,8 +212,9 @@ async def update_daily_diary(channel_id, recent_chat):
         today_str = datetime.now(tz).strftime("%Y-%m-%d")
         cid_str = str(channel_id)
         
-        # 2. 將最近的對話轉換成純文字供 AI 閱讀
-        chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_chat if isinstance(msg['content'], str)])
+        # 2. ✨ 修正：將最近的對話轉換成純文字供 AI 閱讀 (支援圖片文字解析)
+        chat_text = "\n".join([f"{msg['role']}: {extract_text_from_content(msg['content'])}" for msg in recent_chat if extract_text_from_content(msg['content']).strip()])
+        
         if len(chat_text.strip()) < 40: 
             return  # 對話太短（例如只有一兩句哈哈），就不浪費資源寫日記了
             
@@ -929,7 +932,7 @@ async def on_message(message):
 
 
 # ────────────────────────────────────────────────────────
-# 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OpenRouter + Groq 雙軌完全體）
+# 6. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OpenRouter + Groq 雙軌完全體）
 # ────────────────────────────────────────────────────────
 async def fetch_background_decision(messages):
     """專門負責後台『旁聽判定』，優先調用 OpenRouter 免費池，全掛時自動切換至 Groq 備援支援"""
@@ -937,17 +940,20 @@ async def fetch_background_decision(messages):
     global current_groq_idx, GROQ_KEY_COOLDOWNS
     current_time = time.time()
     
-    # ⚡ 動態過濾：OpenRouter 監獄初始檢查
-    available_or_keys = []
-    for i, key in enumerate(OPENROUTER_KEYS):
-        if i in OPENROUTER_KEY_COOLDOWNS:
-            if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
-                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰解鎖，回歸後台戰線。")
-                del OPENROUTER_KEY_COOLDOWNS[i]
-                if key: available_or_keys.append((i, key))
-        else:
-            if key: available_or_keys.append((i, key))
+    # 🧹 自動清理過期的模型鎖 (OpenRouter)
+    for k, v in list(OPENROUTER_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(後台)】OpenRouter 模型 {k} 解鎖，回歸後台戰線。")
+            del OPENROUTER_KEY_COOLDOWNS[k]
 
+    # 🧹 自動清理過期的模型鎖 (Groq)
+    for k, v in list(GROQ_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(後台)】Groq 模型 {k} 解鎖，加入後台備援核心。")
+            del GROQ_KEY_COOLDOWNS[k]
+
+    # ⚡ 動態抓取所有有效金鑰並進行輪詢排序 (不再整把踢除，保留給其他未被鎖的模型用)
+    available_or_keys = [(i, key) for i, key in enumerate(OPENROUTER_KEYS) if key]
     if available_or_keys:
         start_or_idx = current_or_idx % len(available_or_keys)
         current_or_idx = (current_or_idx + 1) % len(available_or_keys)
@@ -955,18 +961,7 @@ async def fetch_background_decision(messages):
     else:
         ordered_or_keys = []
 
-    # ⚡ 動態過濾：Groq 監獄初始檢查（用於 OpenRouter 全掛時的極限救援）
-    available_clients = []
-    for i, client in enumerate(GROQ_CLIENTS):
-        key_index = i + 1  
-        if key_index in GROQ_KEY_COOLDOWNS:
-            if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
-                print(f"【🟢 出獄通知(後台)】第 {key_index} 組 Groq 金鑰解鎖，加入後台備援核心。")
-                del GROQ_KEY_COOLDOWNS[key_index]
-                if client: available_clients.append(client)
-        else:
-            if client: available_clients.append(client)
-
+    available_clients = [client for client in GROQ_CLIENTS if client]
     if available_clients:
         start_idx = current_groq_idx % len(available_clients)
         current_groq_idx = (current_groq_idx + 1) % len(available_clients)
@@ -993,15 +988,17 @@ async def fetch_background_decision(messages):
         model_name = item["model"]
         loop_now = time.time()
         
-        # 即時冷卻防爆檢查
+        # 即時冷卻防爆檢查 (✨ 改為檢查「金鑰+模型」的專屬鎖)
         if provider == "openrouter":
             key_idx = item["key_idx"]
             target_key = item["key"]
-            if key_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[key_idx]: continue
+            lock_key = f"{key_idx}_{model_name}"
+            if lock_key in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[lock_key]: continue
         elif provider == "groq":
             target_client = item["client"]
             k_idx = GROQ_CLIENTS.index(target_client) + 1
-            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]: continue
+            lock_key = f"{k_idx}_{model_name}"
+            if lock_key in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[lock_key]: continue
             
         try:
             if provider == "openrouter":
@@ -1055,19 +1052,19 @@ async def fetch_background_decision(messages):
             total_seconds = max(5.0, total_seconds + 5)
             
             if "429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower():
+                # ✨ 精準將「特定金鑰的特定模型」打入大牢，不影響該金鑰的其他模型
                 if provider == "openrouter":
-                    OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
-                    print(f"【🛑 封印金鑰(後台)】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 OpenRouter 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
                 elif provider == "groq":
-                    key_index = GROQ_CLIENTS.index(target_client) + 1
-                    GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
-                    print(f"【🛑 封印金鑰(後台)】第 {key_index} 組 Groq 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    GROQ_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                    print(f"【🛑 封印模型(後台)】第 {k_idx} 組 Groq 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
             continue
 
-    return "沉默"  # 萬一雙軌全部大雪崩，保底選擇潛水保持沉默
+    return "沉默"
 
 # ────────────────────────────────────────────────────────
-# 6. 🧠 前台主對話核心（主力重裝大腦 + 全動態冷卻完全體）
+# 7. 🧠 前台主對話核心（主力重裝大腦 + 全動態冷卻完全體）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
@@ -1088,7 +1085,23 @@ async def fetch_ai_response(messages, require_vision=False):
 
     current_time = time.time()
     
-    # ⚡ 移除開頭的「整把鑰匙沒收」邏輯，直接把所有有效金鑰排入輪詢，由後面的精準鎖來判斷！
+    # 🧹 1. 自動清理過期的模型鎖 (Groq)
+    for k, v in list(GROQ_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(前台)】Groq 模型 {k} 解鎖，重新歸隊！")
+            del GROQ_KEY_COOLDOWNS[k]
+
+    # 🧹 2. 自動清理過期的模型鎖 (OpenRouter)
+    for k, v in list(OPENROUTER_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(前台)】OpenRouter 模型 {k} 解鎖，重新歸隊！")
+            del OPENROUTER_KEY_COOLDOWNS[k]
+
+    # 🧹 3. 自動清理過期的模型鎖 (Gemini)
+    for k, v in list(GEMINI_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(前台)】Gemini 模型 {k} 解鎖，重新歸隊！")
+            del GEMINI_KEY_COOLDOWNS[k]
     
     # --- Groq 輪詢陣列準備 ---
     valid_groq_clients = [c for c in GROQ_CLIENTS if c]
