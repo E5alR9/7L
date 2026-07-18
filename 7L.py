@@ -749,37 +749,49 @@ async def fetch_ai_response(messages, require_vision=False):
     # 🧠 動態產生混合大腦模型池（前台專用）
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 第一梯隊 (主力重裝 - 70B~120B 頂級傲嬌靈魂)
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
+    # 🌟 【第一梯隊：頂級傲嬌大腦】 (嚴格限定 70B~120B，執行 2-4-1-3 戰術序列)
+    # [2] 首選：Groq 120B 頂配大腦
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
     
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
+    # [4] 次選：OpenRouter Qwen 72B 免費版強大防線
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
         
-    # 基礎 Gemini（眼角膜與穩定核心）
+    # [1] 三選：Groq Llama 3.3 70B 速度款大腦
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
+    
+    # [3] 末選：OpenRouter Llama 3.3 70B 免費版備援
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
+
+    # 🧱 【第二梯隊：小模型區】 (70B 以下所有備援、功能性與輕量級防線)
+    # 💡 基礎 Gemini（眼角膜視覺能力與穩定度核心，約 8B 等級）
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
         {"provider": "gemini", "model": "gemini-1.5-flash"}
     ])
 
-    # 💎 第二梯隊 (中型速度款 - ✨ 注入全新開源神模 Gemma 3 27B)
+    # 💡 20B ~ 32B 中型小大腦級別（注入 Groq 官方最新 Qwen 3.6 27B）
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"}) # ✨ 已同步更新為官方最新 Preview 型號！
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-32b-instruct:free"})
 
-    # ⚡ 第三與第四梯隊 (極速與輕量款防線)
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
+    # 💡 3B ~ 8B 極速與極輕量守門員
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) 
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
     for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"}) 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"})
 
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
