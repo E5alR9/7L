@@ -44,23 +44,23 @@ GROQ_KEYS = [
 current_groq_idx = 0
 GROQ_KEY_COOLDOWNS = {}  # ✨ 補上這行，解決 screenshot 的 NameError！
 
-# 💡 自動註冊 Groq 擴充槽 
-for i in range(1, 31):
-    globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
-
-# 初始化 Groq 客戶端矩陣
+# 💡 真正無限流：完全動態註冊 Groq 擴充槽與客戶端矩陣（完美防禦 429，解除 30 組硬編碼限制）
+GROQ_CLIENTS = []
 try:
     from groq import AsyncGroq
-    for i in range(1, 31):
-        k = globals()[f"GROQ_API_KEY_{i}"]
-        globals()[f"ai_client_{i}"] = AsyncGroq(api_key=k) if k else None
+    # 🔍 根據實際偵測到的金鑰數量進行動態生成，有多少要多少！
+    for i, key in enumerate(GROQ_KEYS, start=1):
+        globals()[f"GROQ_API_KEY_{i}"] = key
+        if key:
+            client = AsyncGroq(api_key=key)
+            globals()[f"ai_client_{i}"] = client
+            GROQ_CLIENTS.append(client)
+        else:
+            globals()[f"ai_client_{i}"] = None
 except ImportError:
-    for i in range(1, 31):
+    for i, key in enumerate(GROQ_KEYS, start=1):
+        globals()[f"GROQ_API_KEY_{i}"] = key
         globals()[f"ai_client_{i}"] = None
-    pass
-
-# 🔥【修正 Bug 1】：必須等上方 ai_client_1~30 生成完畢後，才能撈取 globals()！
-GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
 
 # 3. Tavily 金鑰陣列 
 TAVILY_KEYS = [
@@ -85,17 +85,6 @@ FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 
 PING_TARGETS = [] 
 AUTONOMOUS_CHANNEL_ID = None 
-
-# 初始化 Groq 區塊 (黑科技同步動態生成 ai_client_1~30 客戶端矩陣，完美分流防禦 429)
-try:
-    from groq import AsyncGroq
-    for i in range(1, 31):
-        k = globals()[f"GROQ_API_KEY_{i}"]
-        globals()[f"ai_client_{i}"] = AsyncGroq(api_key=k) if k else None
-except ImportError:
-    for i in range(1, 31):
-        globals()[f"ai_client_{i}"] = None
-    pass
 
 # 🧠 【雙軌架構】動態海馬回快取 (Short-term / RAM)
 HIPPOCAMPUS_CACHE = {}
