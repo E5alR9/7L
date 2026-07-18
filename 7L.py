@@ -362,7 +362,7 @@ async def auto_chat_loop():
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 👥 人物記憶大腦核心 (User Profile Memory)
+# 4. 👥 人物記憶大腦核心 (User Profile Memory + Impression)
 # ────────────────────────────────────────────────────────
 USER_MEMORY_CACHE = {}  # 記憶快取，避免每次說話都去抓雲端導致機器人卡頓
 
@@ -373,7 +373,6 @@ async def get_user_profile(user_id: int, user_obj=None):
         return USER_MEMORY_CACHE[uid_str]
     
     try:
-        # 💡 已修正：安全地使用非同步 await，並加上 db 檢查
         if db is not None:
             doc_ref = db.collection("user_memory").document(uid_str)
             doc = await doc_ref.get()
@@ -390,12 +389,13 @@ async def get_user_profile(user_id: int, user_obj=None):
         "user_id": user_id,
         "username": user_obj.name if user_obj else "未知使用者",
         "display_name": user_obj.display_name if user_obj else "未知姓名",
-        "custom_name": "",  # 專屬稱呼名字，預設為空
+        "custom_name": "",  # 專屬稱呼名字
+        "impression": "",   # ✨ 新增：對這個人的一句話專屬印象
         "last_seen": time.time()
     }
     return default_profile
 
-async def save_user_profile(user_id: int, username: str, display_name: str, custom_name: str = None):
+async def save_user_profile(user_id: int, username: str, display_name: str, custom_name: str = None, impression: str = None):
     """儲存或更新使用者的人物記憶至雲端"""
     uid_str = str(user_id)
     profile = await get_user_profile(user_id)
@@ -403,8 +403,12 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
     # 更新最新資訊
     profile["username"] = username
     profile["display_name"] = display_name
+    
     if custom_name is not None:
-        profile["custom_name"] = custom_name  # 修改稱呼
+        profile["custom_name"] = custom_name  # 更新稱呼
+    if impression is not None:
+        profile["impression"] = impression    # ✨ 更新對他的印象
+        
     profile["last_seen"] = time.time()
     
     # 同步到快取與 Firebase
@@ -511,15 +515,14 @@ async def on_message(message):
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
-        f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n\n"
+        f"{impression_text}"
+        f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，並記住妳對他的印象。)\n\n"
         
-        f"【🧠 潛意識隱藏任務 1：動態稱呼分析】\n"
-        f"你在與使用者聊天時，請在背景默默分析對方的說話風格、自我介紹、或互動脈絡。\n"
-        f"如果你發現了更適合稱呼對方的方式（例如對方提到「我叫小明」、或你想幫他取個專屬外號），請在你的「回覆內容最尾端」加上隱藏標籤 `||NEW_NAME:新稱呼||`。\n"
-        f"⚠️ 嚴格執行守則：\n"
-        f"1. 如果目前的稱呼已經很完美，或者當下不需要改名，就「絕對不要」加上這個標籤。\n"
-        f"2. 標籤必須格式嚴格正確，例如：`||NEW_NAME:爆肝超人||`。\n"
-        f"3. 沒必要時請保持沉默，只有當你「強烈決定」要更新大腦對他的稱呼時才使用。\n\n"
+        f"【🧠 潛意識隱藏任務 1：動態記憶更新 (稱呼與印象)】\n"
+        f"你在與使用者聊天時，請默默分析他的行為或喜好。如果你決定在潛意識裡更新對他的記憶，請在『回覆內容最尾端』加上隱藏標籤：\n"
+        f"👉 改稱呼：`||NEW_NAME:新稱呼||` (例如: ||NEW_NAME:笨蛋超人||)\n"
+        f"👉 記印象：`||NEW_IMPRESSION:一句話形容他||` (例如: ||NEW_IMPRESSION:這傢伙是個愛熬夜打遊戲的傲嬌||)\n"
+        f"⚠️ 守則：沒必要更新時請保持沉默，絕不加標籤！只有當你發現他有新的特徵、或說了值得記住的話時，才使用標籤寫入妳的長期記憶。\n\n"
         
         f"【🧠 潛意識隱藏任務 2：真實人類連發訊息（自由意志）】\n"
         f"為了模擬現實人類在 Discord 上熱絡聊天時『連續傳送多條訊息』的真實感，如果你在回覆完第一句話後，內心『強烈渴望』想要主動追加補述、吐槽、撒嬌或轉換話題，請在妳的回覆最末端加上隱藏標籤 `||CONTINUE_MESSAGE:妳強烈想連發的第二句話內容||`。\n"
@@ -622,18 +625,28 @@ async def on_message(message):
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
 
-        # ─── 🧬 大腦自主進化：攔截與處理潛意識隱藏改名標籤 ───
-        match = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
-        if match:
-            new_nickname = match.group(1).strip()
-            if new_nickname and new_nickname != current_custom_name:
+        # ─── 🧬 大腦自主進化：攔截與處理潛意識隱藏記憶標籤 ───
+        name_match = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
+        imp_match = re.search(r"\|\|NEW_IMPRESSION:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
+        
+        new_nickname = name_match.group(1).strip() if name_match else None
+        new_impression = imp_match.group(1).strip() if imp_match else None
+        
+        # 只要有更新稱呼 或 更新印象 其中一項
+        if new_nickname or new_impression:
+            final_name = new_nickname if new_nickname and new_nickname != current_custom_name else None
+            final_imp = new_impression if new_impression and new_impression != current_impression else None
+            
+            if final_name or final_imp:
                 await save_user_profile(
                     user_id=user_id,
                     username=message.author.name,
                     display_name=message.author.display_name,
-                    custom_name=new_nickname
+                    custom_name=final_name,
+                    impression=final_imp
                 )
-                print(f"🧬【大腦自主進化】7L 在聊天中自動將 {message.author.display_name} 的稱呼修改為：{new_nickname}")
+                if final_name: print(f"🧬【大腦進化】7L 將 {message.author.display_name} 的稱呼修改為：{final_name}")
+                if final_imp: print(f"🧬【大腦進化】7L 將 {message.author.display_name} 的印象更新為：{final_imp}")
         
         # ─── 💬 自由意志：攔截與處理 AI 自己想主動連發的下一句話 ───
         ai_next_sentence = None
@@ -641,10 +654,10 @@ async def on_message(message):
         if continue_match:
             ai_next_sentence = continue_match.group(1).strip()
 
-        # 🚨【核心安全鎖】前台輸出前，不論匹配是否成功，地毯式強制抹除所有變形標籤
+        # 🚨【核心安全鎖】前台輸出前，強制抹除所有潛意識標籤，拒絕穿幫
         bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
+        bot_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
         bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
-
         # 更新本地快取記憶
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
