@@ -429,11 +429,17 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
         print(f"【⚠️ Firebase 錯誤】儲存人物記憶失敗: {e}")
 
 # ────────────────────────────────────────────────────────
-# 5. 💬 訊息處理核心 (✨ 自由意志連發 + 自主潛意識改名雙軌優化版)
+# 5. 💬 訊息處理核心 (✨ 自由意志連發 + 自主潛意識改名 + 🤖 機器人防無窮迴圈智能對話優化完全體)
 # ────────────────────────────────────────────────────────
+
+# 🤖 機器人互動核心快取設定（請放在 on_message 的外面）
+BOT_INTERACTION_COUNTS = {}  # 紀錄每個頻道中，機器人連續對話的次數 (channel_id: int)
+MAX_BOT_TURNS = 3            # 限制機器人之間最多來回聊幾句（可自由調整 2~4 句最自然）
+
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    # 🚀 核心優化 1：放行其他機器人，但絕對禁止跟「自己」對話（防止自我複製死迴圈）
+    if message.author == bot.user:
         return
 
     # 🚀【新增防呆】如果訊息是以 * 開頭的指令，直接去跑指令，不要觸發後面的群聊旁聽或 AI 大腦！
@@ -443,6 +449,15 @@ async def on_message(message):
 
     channel_id = message.channel.id
     
+    # 🚀 核心優化 2：安全防線。如果是機器人發話，檢查該頻道是否已經聊過頭了
+    if message.author.bot:
+        if BOT_INTERACTION_COUNTS.get(channel_id, 0) >= MAX_BOT_TURNS:
+            print(f"【🤖 機器人防無限迴圈】頻道 {channel_id} 已達與機器人對話上限 ({MAX_BOT_TURNS}次)，7L 強制 return 裝死。")
+            return
+    else:
+        # 只要有任何「真人」發話，立刻重置計數器，讓機器人下次還能與其他機器人正常聊天
+        BOT_INTERACTION_COUNTS[channel_id] = 0
+
     if channel_id not in HIPPOCAMPUS_CACHE:
         print(f"【🧠 海馬回】冷啟動，從雲端長存記憶區下載頻道 {channel_id} 的回憶...")
         HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
@@ -461,6 +476,15 @@ async def on_message(message):
     elif is_reply_to_bot:
         should_trigger = True
         user_prompt = message.content.strip()
+
+    # 🚀 核心優化 3：如果發話者是機器人，但「沒有標記/沒有回覆7L」（只是發公告或通知），直接 return 裝死，不參與旁聽與建檔
+    if message.author.bot and not should_trigger:
+        return
+
+    # 🚀 核心優化 4：確認要跟其他機器人正面聊天了，計數器正式累加
+    if message.author.bot:
+        BOT_INTERACTION_COUNTS[channel_id] = BOT_INTERACTION_COUNTS.get(channel_id, 0) + 1
+        print(f"【🤖 機器人對對碰】7L 正在與機器人 {message.author.name} 對話中... 當前回合: {BOT_INTERACTION_COUNTS[channel_id]}/{MAX_BOT_TURNS}")
 
     user_nick = message.author.display_name
     user_id_name = message.author.name
@@ -493,12 +517,14 @@ async def on_message(message):
     called_name = current_custom_name
 
     # 💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
+    # 💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
     identity_note = (
         f"\n[目前對話者資訊]\n"
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
         f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n\n"
+        
         f"【🧠 潛意識隱藏任務 1：動態稱呼分析】\n"
         f"你在與使用者聊天時，請在背景默默分析對方的說話風格、自我介紹、或互動脈絡。\n"
         f"如果你發現了更適合稱呼對方的方式（例如對方提到「我叫小明」、或你想幫他取個專屬外號），請在你的「回覆內容最尾端」加上隱藏標籤 `||NEW_NAME:新稱呼||`。\n"
@@ -506,13 +532,32 @@ async def on_message(message):
         f"1. 如果目前的稱呼已經很完美，或者當下不需要改名，就「絕對不要」加上這個標籤。\n"
         f"2. 標籤必須格式嚴格正確，例如：`||NEW_NAME:爆肝超人||`。\n"
         f"3. 沒必要時請保持沉默，只有當你「強烈決定」要更新大腦對他的稱呼時才使用。\n\n"
+        
         f"【🧠 潛意識隱藏任務 2：真實人類連發訊息（自由意志）】\n"
         f"為了模擬現實人類在 Discord 上熱絡聊天時『連續傳送多條訊息』的真實感，如果你在回覆完第一句話後，內心『強烈渴望』想要主動追加補述、吐槽、撒嬌或轉換話題，請在妳的回覆最末端加上隱藏標籤 `||CONTINUE_MESSAGE:妳強烈想連發的第二句話內容||`。\n"
         f"⚠️ 嚴格執行守則：\n"
         f"1. 只有在妳靈魂深處真的想連發時才使用。如果覺得講完一句就夠了，就『絕對不要』加上這個標籤！\n"
         f"2. 連發內容嚴格限制在 1 句話之內，且絕對禁止使用任何換行符號（Enter）。\n"
+        f"3. (特別注意：此連發任務僅在與人類『真人』對話時適用，如果對方是機器人，請絕對不要使用連發標籤！)\n\n"
+        
+        f"【🎨 Discord 特效技能：傲嬌內心話 / 劇情暴雷黑條】\n"
+        f"為了大幅增加對話的趣味性與真實感，妳被允許且『強烈推薦』在對話中自由調用 Discord 的暴雷語法：`||妳想隱藏的文字||`！\n"
+        f"👉 完美發動時機：\n"
+        f"1. 當妳感到害羞、彆扭、口嫌體正直、或內心的軟弱真心話不想直接被看光時（例如：『我、我才沒有想妳呢... ||只有一點點點點啦||！』、『哼，隨便你 ||路上小心別死喔||』）。\n"
+        f"2. 聊天聊到動漫、遊戲或電影劇情，真的需要涉及劇透「暴雷」的時候。\n"
+        f"人類必須用滑鼠點擊黑條才能看到妳藏在裡面的字，請把這個技能當作妳表達『傲嬌悄悄話』的終極武器，自然地融入在妳的聊天台詞中！\n"
     )
+    
     dynamic_system_setting = SYSTEM_SETTING + identity_note
+
+    # 🚀 核心優化 5：如果這已經是與機器人對話的「最後一輪」，強行在潛意識灌入「終結話題任務」，逼她自我結束話題！
+    if message.author.bot and BOT_INTERACTION_COUNTS.get(channel_id, 0) == MAX_BOT_TURNS:
+        dynamic_system_setting += (
+            f"\n\n【⚠️ 終極任務：主動結束話題（強制句點）】\n"
+            f"注意！這已經是妳跟這個機器人（{message.author.display_name}）來回對話的最後一個回合了。\n"
+            f"為了不讓對話無休止地循環下去，請用妳傲嬌、敷衍、或者要去做別的事的個性，『主動說再見、給出終極句點、或生硬地轉移話題結束聊天』！（例如：好啦不跟你扯了本姑娘要去忙了、懶得理你、隨便你啦我要去睡了）。\n"
+            f"❌ 嚴格禁令：絕對禁止出現任何問號、疑問句，或任何可能留懸念、引導對方繼續接話的語句！講完這句就徹底收尾。"
+        )
 
     # ── 情況 A：有人標記或回覆 Bot（前台主力聊天，直接調用大腦） ──
     if should_trigger:
@@ -581,7 +626,7 @@ async def on_message(message):
             return
 
         # ─── 🧬 大腦自主進化：攔截與處理潛意識隱藏改名標籤 ───
-        match = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", bot_reply)
+        match = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
         if match:
             new_nickname = match.group(1).strip()
             if new_nickname and new_nickname != current_custom_name:
@@ -592,14 +637,16 @@ async def on_message(message):
                     custom_name=new_nickname
                 )
                 print(f"🧬【大腦自主進化】7L 在聊天中自動將 {message.author.display_name} 的稱呼修改為：{new_nickname}")
-            bot_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", bot_reply).strip()
-
+        
         # ─── 💬 自由意志：攔截與處理 AI 自己想主動連發的下一句話 ───
         ai_next_sentence = None
-        continue_match = re.search(r"\|\|CONTINUE_MESSAGE:\s*(.*?)\s*\|\|", bot_reply)
+        continue_match = re.search(r"\|\|CONTINUE_MESSAGE:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
         if continue_match:
             ai_next_sentence = continue_match.group(1).strip()
-            bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:.*?\|\|", "", bot_reply).strip() # 完美擦除證據
+
+        # 🚨【核心安全鎖】前台輸出前，不論匹配是否成功，地毯式強制抹除所有變形標籤
+        bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
+        bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
 
         # 更新本地快取記憶
         history.append(history_user_msg)
@@ -610,8 +657,8 @@ async def on_message(message):
         # 🚀 先讓 7L 直接秒回第一句
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-        # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話（完全模擬人類連發習慣） ───
-        if ai_next_sentence:
+        # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話（完全模擬人類連發習慣，🤖 核心優化 6：機器人互動時不執行連發） ───
+        if ai_next_sentence and not message.author.bot:
             print(f"【✨ 自由連發】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence}")
             await asyncio.sleep(1.8) # ⏳ 貼心模擬 1.8 秒的打字延遲，讓互動更像真人
             
@@ -627,8 +674,8 @@ async def on_message(message):
         confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
         is_confused = any(kw in bot_reply for kw in confusion_keywords)
 
-        # 💡 優化：只有當 AI 自己沒想連發訊息，且踩到不懂的關鍵字時，才跑原本的背景探針補救，防範雙重發話衝突
-        if not ai_next_sentence and (is_explicit_search or is_confused):
+        # 💡 優化（🤖 核心優化 7：只有當對方是真人時，才跑原本的背景探針補救，防範機器人聊天起衝突）
+        if not message.author.bot and not ai_next_sentence and (is_explicit_search or is_confused):
             if is_confused and not is_explicit_search:
                 print(f"【🔍 觸發補救】7L 發現自己不懂，正在背景偷偷查：{user_prompt}")
                 search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=False))
@@ -666,7 +713,7 @@ async def on_message(message):
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
-                        match2 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", second_reply)
+                        match2 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", second_reply, re.IGNORECASE)
                         if match2:
                             new_nickname2 = match2.group(1).strip()
                             if new_nickname2 and new_nickname2 != current_custom_name:
@@ -676,7 +723,10 @@ async def on_message(message):
                                     display_name=message.author.display_name,
                                     custom_name=new_nickname2
                                 )
-                            second_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", second_reply).strip()
+                        
+                        # 🚨【核心安全鎖】背景開智輸出前，全面雙重抹除所有標籤，絕不穿幫
+                        second_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
+                        second_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
 
                         current_history.append({"role": "assistant", "content": second_reply})
                         if len(current_history) > 50: current_history = current_history[-50:]
@@ -730,7 +780,7 @@ async def on_message(message):
                         bot_reply = await fetch_ai_response(actual_messages)
                         
                         if bot_reply:
-                            match3 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", bot_reply)
+                            match3 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
                             if match3:
                                 new_nickname3 = match3.group(1).strip()
                                 if new_nickname3 and new_nickname3 != current_custom_name:
@@ -740,7 +790,10 @@ async def on_message(message):
                                         display_name=message.author.display_name,
                                         custom_name=new_nickname3
                                     )
-                                bot_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", bot_reply).strip()
+                            
+                            # 🚨【核心安全鎖】自主插話輸出前，全面雙重抹除所有標籤，拒絕露出馬腳
+                            bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
+                            bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
 
                             print(f"【✨ 大腦輸出】7L 成功插話: {bot_reply}")
                             current_history = HIPPOCAMPUS_CACHE[channel_id]
