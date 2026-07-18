@@ -766,26 +766,18 @@ async def fetch_ai_response(messages, require_vision=False):
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
 
-    # 🧱 【第二梯隊：小模型區】 (70B 以下所有備援、功能性與輕量級防線)
-    # 💡 基礎 Gemini（眼角膜視覺能力與穩定度核心，約 8B 等級）
+    # 🧱 【第二梯隊：小模型與最後防線】 (❌ 徹底移除 Groq 所有小模型，100% 絕不占用 Groq API)
+    # 💡 基礎 Gemini（眼角膜與視覺核心，獨立於 Groq 之外不吃其額度）
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
         {"provider": "gemini", "model": "gemini-1.5-flash"}
     ])
 
-    # 💡 20B ~ 32B 中型小大腦級別（注入 Groq 官方最新 Qwen 3.6 27B）
+    # 💡 OpenRouter 100% 全免費高強度小模型矩陣防線
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
-    for client in ordered_clients: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
-    for client in ordered_clients: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"}) # ✨ 已同步更新為官方最新 Preview 型號！
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-32b-instruct:free"})
-
-    # 💡 3B ~ 8B 極速與極輕量守門員
-    for client in ordered_clients: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) 
     for idx, key in ordered_or_keys: 
