@@ -689,7 +689,7 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 前台主對話核心（主力重裝大腦 + 2026 免費神模版）
+# 6. 🧠 前台主對話核心（主力重裝大腦 + 2026 免費神模版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
@@ -889,7 +889,7 @@ async def fetch_ai_response(messages, require_vision=False):
 
 
 # ────────────────────────────────────────────────────────
-# 5.1 ⚙️ 後台決策核心 (✨ 純免費小模型分工版 - 絕不佔用一線大腦額度)
+# 7 ⚙️ 後台決策核心 (✨ 純免費小模型分工版 - 絕不佔用一線大腦額度)
 # ────────────────────────────────────────────────────────
 async def fetch_background_decision(messages):
     """專門負責後台『旁聽判定』或『大批資料處理』，僅調用 OpenRouter 的純免費小模型池"""
@@ -953,7 +953,7 @@ async def fetch_background_decision(messages):
 
 
 # ────────────────────────────────────────────────────────
-# 6.🌐網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
+# 8.🌐網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
 # ────────────────────────────────────────────────────────
 async def fetch_tavily_single(query, api_key):
     """執行單一 Tavily API 請求"""
@@ -1018,7 +1018,7 @@ async def search_internet_meme(query, is_explicit=True):
     return "網路訊號不佳，Tavily 金鑰矩陣已全面癱瘓。"
 
 # ────────────────────────────────────────────────────────
-# 7. 🛠️ 互動指令集 (包含動態健康矩陣與人物記憶指令)
+# 9. 🛠️ 互動指令集 (包含動態健康矩陣與人物記憶指令)
 # ────────────────────────────────────────────────────────
 
 # --- 📊 API 金鑰即時健康檢查矩陣 ---
@@ -1172,7 +1172,7 @@ async def check_all_apis(ctx):
             await msg.edit(content=f"❌ **API 探測發生未知錯誤**：\n```\n{e}\n```")
 
 # ────────────────────────────────────────────────────────
-# 8. 🌐 虛擬網頁與啟動區塊
+# 10 🌐 虛擬網頁與啟動區塊
 # ────────────────────────────────────────────────────────
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
