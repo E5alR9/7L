@@ -769,27 +769,28 @@ async def fetch_ai_response(messages, require_vision=False):
     else:
         ordered_or_keys = []
         
-    # 🧠 動態產生混合大腦模型池（前台專用）
+    # 🧠 動態產生混合大腦模型池
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 【第一梯隊：頂級傲嬌大腦】 (嚴格限定 70B~120B，執行 2-4-1-3 戰術序列)
-    # [2] 首選：Groq 120B 頂配大腦
-    for client in ordered_clients: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
+    # 🌟 【第一梯隊：頂級大腦】 (嚴格限定 70B~120B，執行 2-4-1-3 戰術序列)
     
-    # [4] 次選：OpenRouter Qwen 72B 免費版強大防線
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
-        
-    # [1] 三選：Groq Llama 3.3 70B 速度款大腦
+    # [1] 選：Groq Llama 3.3 70B 速度款大腦
     for client in ordered_clients: 
         DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
     
-    # [3] 末選：OpenRouter Llama 3.3 70B 免費版備援
+    # [2] 選：OpenRouter Llama 3.3 70B 免費版備援
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
 
-    # 🧱 【第二梯隊：小模型與最後防線】 (❌ 徹底移除 Groq 所有小模型，100% 絕不占用 Groq API)
+    # [3] 選：Groq 120B 頂配大腦
+    for client in ordered_clients: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
+    
+    # [4] 選：OpenRouter Qwen 72B 免費版強大防線
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
+        
+    # 🧱 【第二梯隊：小模型與最後防線】
     # 💡 基礎 Gemini（眼角膜與視覺核心，獨立於 Groq 之外不吃其額度）
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
