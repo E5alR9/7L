@@ -531,7 +531,7 @@ async def auto_chat_loop():
             pass
 
     if active_users:
-        lucky_user_id = random.choice(active_users)
+        lucky_user_id = random.choice(active_users) if active_users else None
 
     if lucky_user_id:
         user_mention = f"<@{lucky_user_id}>"
@@ -548,30 +548,30 @@ async def auto_chat_loop():
             f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
         )
 
-    # ⚠️ 這裡會用到 SYSTEM_SETTING，請確保它在其他區塊中有被宣告！
+    # ⚠️ 組合完整大腦記憶鏈
     messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": autonomous_prompt}]
     bot_reply = await fetch_ai_response(messages)
-
+    
     if bot_reply:
         # ✨【核心安全鎖】背景主動搭話前，全面抹除所有潛意識標籤，防止穿幫
         bot_reply = clean_bot_reply_tags(bot_reply)
         
         # 🛡️ 防呆：防止被抹成空字串
-        if not bot_reply: 
+        if not bot_reply:
             return
-
+            
         # ✨【時空防禦優化】動態獲取當前「最新快取」，避免 AI 在思考期間有人傳新訊息而被覆蓋
         live_history = HIPPOCAMPUS_CACHE.get(channel_id, history)
-
         log_content = f"【妳主動搭話】對 {user_mention} 說話" if lucky_user_id else "【妳主動發言】自言自語"
+        
         live_history.append({"role": "user", "content": log_content})
         live_history.append({"role": "assistant", "content": bot_reply})
         if len(live_history) > 50:
             live_history = live_history[-50:]
-            
         HIPPOCAMPUS_CACHE[channel_id] = live_history
+        
         asyncio.create_task(save_to_long_term_memory(channel_id, live_history))
-
+        
         # 安全清洗乾淨後正式發出
         print(f"【✨ 背景發言】7L 在頻道 {channel_id} 主動發言: {bot_reply}")
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
