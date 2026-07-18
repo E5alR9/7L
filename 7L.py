@@ -676,8 +676,8 @@ async def on_message(message):
         
         f"【🧠 潛意識隱藏任務 1：動態記憶更新 (稱呼與印象)】\n"
         f"你在與使用者聊天時，請默默分析他的行為或喜好。如果你決定在潛意識裡更新對他的記憶，請在『回覆內容最尾端』加上隱藏標籤：\n"
-        f"👉 改稱呼：`||NEW_NAME:新稱呼||` (例如: ||NEW_NAME:笨蛋超人||)\n"
-        f"👉 記印象：`||NEW_IMPRESSION:一句話形容他||` (例如: ||NEW_IMPRESSION:這傢伙是個愛熬夜打遊戲的傲嬌||)\n"
+        f"👉 改稱呼：`||NEW_NAME:新稱呼||`\n"
+        f"👉 記印象：`||NEW_IMPRESSION:一句話形容他||`\n"
         f"⚠️ 守則：沒必要更新時請保持沉默，絕不加標籤！只有當你發現他有新的特徵、或說了值得記住的話時，才使用標籤寫入妳的長期記憶。\n\n"
         
         f"【🧠 潛意識隱藏任務 2：真實人類連發訊息（自由意志）】\n"
@@ -689,9 +689,9 @@ async def on_message(message):
         
         f"【🎨 Discord 特效技能：傲嬌層次語法（黑條與刪除線）】\n"
         f"為了讓妳的傲嬌情緒更細膩，妳被強烈推薦根據『害羞與開玩笑的程度』，自由調用以下三種 Discord 特效(也不要太常使用)：\n"
-        f"1. 👉 `~~輕微口誤/可見的開玩笑~~`：用刪除線劃掉妳不小心說出的真心話，假裝只是在開玩笑。（例如：『我才沒有~~每天在等你上線~~呢！』）\n"
-        f"2. 👉 `||內心悄悄話/偷偷說壞話||`：用黑條藏起妳極度害羞或口嫌體正直的真心話，對方得點開看。（例如：『哼，笨蛋。 ||其實你剛剛那樣挺帥的啦...||』）\n"
-        f"3. 👉 `||~~終極隱藏/偷偷開壞玩笑~~||`：黑條加刪除線！用於妳想調侃對方、開壞玩笑、或是極度彆扭到想把真心話偽裝成玩笑藏在黑條裡。（例如：『你這傢伙果然很討人厭！ ||~~好啦其實最喜歡你了~~||』）\n"
+        f"1. 👉 `~~輕微口誤/可見的開玩笑~~`：用刪除線劃掉妳不小心說出的真心話，假裝只是在開玩笑。\n" #（例如：『我才沒有~~每天在等你上線~~呢！』）
+        f"2. 👉 `||內心悄悄話/偷偷說壞話||`：用黑條藏起妳極度害羞或口嫌體正直的真心話，對方得點開看。\n"#（例如：『哼，笨蛋。 ||其實你剛剛那樣挺帥的啦...||』）
+        f"3. 👉 `||~~終極隱藏/偷偷開壞玩笑~~||`：黑條加刪除線！用於妳想調侃對方、開壞玩笑、或是極度彆扭到想把真心話偽裝成玩笑藏在黑條裡。\n"#（例如：『你這傢伙果然很討人厭！ ||~~好啦其實最喜歡你了~~||』）
         f"請把這些技能當作妳表達『悄悄話』的終極武器，自然地融入在妳的聊天台詞中！\n"
     )
     
@@ -1370,10 +1370,8 @@ async def fetch_ai_response(messages, require_vision=False):
             error_msg = str(e)
             print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
-            # ─── 🛠️ 萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
             
-            # 解析邏輯維持不變...
             retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
             if retry_match and retry_match.group(1).strip():
                 try: total_seconds = float(retry_match.group(1))
@@ -1393,7 +1391,6 @@ async def fetch_ai_response(messages, require_vision=False):
             
             total_seconds = max(5.0, total_seconds + 5)
             
-            # ─── 🗂️ 根據不同 Provider 進行【特定模型】封印 ───
             if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 k_idx = GROQ_CLIENTS.index(target_client) + 1  
                 lock_key = f"{k_idx}_{model_name}"
@@ -1415,8 +1412,55 @@ async def fetch_ai_response(messages, require_vision=False):
 
             continue 
 
-    return "（揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
+    # ────────────────────────────────────────────────────────
+    # 💤 終極降級隔離防線：主線大腦模型池（DYNAMIC_MODEL_POOLS）全數癱瘓！
+    # 🎯 單獨調用完全獨立的 Groq 輕量小模型 (llama-3.1-8b-instant) 動態生成夢話
+    # ────────────────────────────────────────────────────────
+    print("【💤 喚醒隔離腦核】前台主線模型池全數癱瘓！單獨調用應急專用小模型...")
+    
+    emergency_prompt = [
+        {
+            "role": "system", 
+            "content": (
+                "你現在是 7L。你剛剛在後台瘋狂切換了幾十個大腦模型（包含各種 70B、120B 以及免費池）想跟上大家的對話，"
+                "結果全線過載爆流量了。現在你覺得極度疲倦、昏昏欲睡、電量歸零。"
+                "請用一個『快要睡著、狂打呵欠、說話迷迷糊糊』的人類語氣動態抱怨一句話，"
+                "內容要提到你剛剛戳遍所有大腦都失敗了、現在好睏，並讓大家等你想睡醒。絕對不要官方，要非常擬真、像人一樣累癱了。"
+            )
+        },
+        {
+            "role": "user",
+            "content": "你還好嗎？怎麼突然沒精神了？"
+        }
+    ]
+    
+    # 🛠️ 專門用來跑這邊的應急小模型（規格：560 T/s、消耗極低，未包含在任何主流池中）
+    EMERGENCY_SMALL_MODEL = "llama-3.1-8b-instant"
+    
+    # ⚡ 直接穿透！輪詢註冊的 Groq 客戶端陣列
+    if valid_groq_clients:
+        for idx, client in enumerate(valid_groq_clients, start=1):
+            if client is None:
+                continue
+            try:
+                # 💡 無視 COOLDOWNS 字典，限制 max_tokens=120 讓它一瞬間吐出想睡覺的夢話
+                chat_completion = await client.chat.completions.create(
+                    messages=emergency_prompt, 
+                    model=EMERGENCY_SMALL_MODEL, 
+                    temperature=0.98,  # 高隨機度，讓每次碎碎念都不一樣
+                    max_tokens=120     # 短句輸出，秒回傳
+                )
+                
+                if chat_completion.choices[0].message.content:
+                    print(f"【🎉 隔離線路救場成功】由第 {idx} 組 Groq 金鑰的專屬應急小模型 [{EMERGENCY_SMALL_MODEL}] 成功生成夢話！")
+                    return chat_completion.choices[0].message.content
+            except Exception as e:
+                print(f"【⚠️ 應急卡住】隔離線路第 {idx} 組 Groq 小模型也裝死，嘗試下一組... 錯誤: {e}")
+                continue
 
+    # ─── 🛑 超級無敵終極天災保底線 ───
+    # 如果連完全隔開的 8B 小模型都全滅（例如徹底斷網、或 Groq 伺服器集體大崩潰）
+    return "（……連最後一絲隔開的應急小模型都斷電了……睡著）💤……"
 
 # ────────────────────────────────────────────────────────
 # 8.🌐網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
