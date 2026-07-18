@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 # 用於影片關鍵影格抽樣
 try:
     import cv2
@@ -36,21 +37,13 @@ GROQ_API_KEY_9 = os.getenv("GROQ_API_KEY_9")
 GROQ_API_KEY_10 = os.getenv("GROQ_API_KEY_10")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ✨ 改成 10 組 OpenRouter 金鑰
-OPENROUTER_KEYS = [
-    os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)
-]
-OPENROUTER_KEYS = [k for k in OPENROUTER_KEYS if k] # 自動過濾掉沒填的空槽
-
-current_or_idx = 0
-OPENROUTER_KEY_COOLDOWNS = {}
-
 # ────────────────────────────────────────────────────────
 # 🔍 Tavily 十大金鑰矩陣初始化與輪詢指標
 # ────────────────────────────────────────────────────────
 TAVILY_KEYS = [k.strip() for k in os.getenv("TAVILY_KEYS", "").split(",") if k.strip()]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
 current_background_idx = 0                                         # 背景搜：從第一個開始
+
 # ✨ Firebase 環境變數 (請將下載的 JSON 金鑰內容整串貼入此環境變數)
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 
@@ -175,18 +168,19 @@ GROQ_CLIENTS = [
     ai_client_5, ai_client_4, ai_client_3, ai_client_2, ai_client_1
 ]
 current_groq_idx = 0
-GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間，格式 { 10: 1700000300.0 }
+GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間
 
-# 🎯 2. OpenRouter 10 槽輪詢陣列與冷卻監獄 (✨ 新增)
-# 自動從環境變數讀取 OPENROUTER_API_KEY_1 ~ OPENROUTER_API_KEY_10
+# 🎯 2. OpenRouter 多槽輪詢陣列與冷卻監獄 (✨ 單一變數切割版)
+# 從環境變數讀取單一字串，假設格式為 "key1,key2,key3..."
+openrouter_env_string = os.getenv("OPENROUTER_API_KEY", "")
+
+# 利用逗號切割字串，並自動過濾掉空白或沒填的部分
 OPENROUTER_KEYS = [
-    os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)
+    k.strip() for k in openrouter_env_string.split(",") if k.strip()
 ]
-# 自動過濾掉沒填的空槽 (如果你只填了 5 把，它就只會用這 5 把去輪)
-OPENROUTER_KEYS = [k for k in OPENROUTER_KEYS if k] 
-
 current_or_idx = 0
-OPENROUTER_KEY_COOLDOWNS = {}  # 用來記錄 OpenRouter 金鑰出獄時間
+OPENROUTER_KEY_COOLDOWNS = {}
+
 # 📜 全域共用規則
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
