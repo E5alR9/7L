@@ -158,79 +158,15 @@ async def extract_video_frames(attachment, max_frames=4):
         return []
 
 # ────────────────────────────────────────────────────────
-# 🧠 豪華跨平台備用大腦池 (✨ 10金鑰全面解禁與分流排列)
+# 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
 # ────────────────────────────────────────────────────────
-MODEL_POOLS = [
-    # 🌟 第一梯隊：頂級旗艦大腦 (大參數 / 強推理 / 10 Key 矩陣全數在線)
-    {"provider": "groq", "client": ai_client_10, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_9, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_8, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_7, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_6, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_5, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.3-70b-versatile"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.3-70b-versatile"},                        
-    
-    # 🚀 120B 頂級旗艦防線
-    {"provider": "groq", "client": ai_client_10, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_9, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_8, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_7, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_6, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_5, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "openai/gpt-oss-120b"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "openai/gpt-oss-120b"},                        
-    
-    # 外部備援大腦
-    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},   
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},          
-    {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # 🖼️ 專職看圖/影片
-    {"provider": "gemini", "model": "gemini-1.5-flash"},                # 💬 解封：兼職純文字最後大後盾
-
-    # 💎 第二梯隊：中堅主力大腦 (高速度 / 優秀效能 / 10 Key 均勻覆蓋)
-    {"provider": "groq", "client": ai_client_10, "model": "openai/gpt-oss-20b"},   # ⚡ 1000 tps 超高速
-    {"provider": "groq", "client": ai_client_9, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_8, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_7, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_6, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_5, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "openai/gpt-oss-20b"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "openai/gpt-oss-20b"},                        
-    
-    # 🔮 全新 Qwen3 與 Qwen3.6 預覽防線
-    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3-32b"},                        
-    {"provider": "groq", "client": ai_client_3, "model": "qwen/qwen3-32b"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "qwen/qwen3-32b"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "qwen/qwen3-32b"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "qwen/qwen3.6-27b"},                      
-    {"provider": "groq", "client": ai_client_3, "model": "qwen/qwen3.6-27b"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "qwen/qwen3.6-27b"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "qwen/qwen3.6-27b"},                        
-    {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},          
-    {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"},     
-
-    # ⚡ 第三梯隊：高效能輕量 / 次世代預覽
-    {"provider": "groq", "client": ai_client_4, "model": "meta-llama/llama-4-scout-17b-16e-instruct"}, # 🏹 Llama 4 搶先版 (750 tps)
-    {"provider": "groq", "client": ai_client_3, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "meta-llama/llama-4-scout-17b-16e-instruct"},                        
-    {"provider": "groq", "client": ai_client_4, "model": "llama-3.1-8b-instant"}, # 🥦 穩定生產版
-    {"provider": "groq", "client": ai_client_3, "model": "llama-3.1-8b-instant"},                        
-    {"provider": "groq", "client": ai_client_2, "model": "llama-3.1-8b-instant"},                        
-    {"provider": "groq", "client": ai_client_1, "model": "llama-3.1-8b-instant"},                        
-    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},                
-    {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},      
-    {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"},       
-
-    # 🛡️ 第四梯隊：輕量級防線 / 備用應急
-    {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"}   
+# 原始排列：從第 10 把到第 1 把
+GROQ_CLIENTS = [
+    ai_client_10, ai_client_9, ai_client_8, ai_client_7, ai_client_6, 
+    ai_client_5, ai_client_4, ai_client_3, ai_client_2, ai_client_1
 ]
+
+current_groq_idx = 0  # 紀錄目前輪到第幾把金鑰
 # 📜 全域共用規則
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
@@ -574,39 +510,75 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（支援動態大腦分流）
+# 5. 🧠 跨平台備援核心（動態輪詢大腦矩陣版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
+    global current_groq_idx
+    
     # ─── 🕒 動態注入現實時間（台灣時區） ───
     try:
-        # 取得精確的台灣時間
         tw_time = datetime.now(ZoneInfo("Asia/Taipei"))
         time_str = tw_time.strftime("%Y年%m月%d日 %H點%M分")
-        
-        # 轉換星期格式 (0=星期日, 1=星期一...)
         weekday_map = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"}
         weekday_str = f"星期{weekday_map[int(tw_time.strftime('%w'))]}"
         
-        # 建立時間提示詞，引導 7L 做出對應反應
         time_context = (
             f"\n\n【現實世界時間提示】現在時間是：{time_str} ({weekday_str})。"
             f"請根據這個時間和妳的性格做出對應反應（例如：如果是深夜，傲嬌地催使用者去睡覺；如果是早晨，碎碎念他怎麼這麼早起）。"
         )
-        
-        # 自動找到對話堆疊中的第一個 system 設定，把時間強行塞進去
         if messages and messages[0]["role"] == "system":
             messages[0]["content"] = messages[0]["content"] + time_context
-            
     except Exception as e:
         print(f"【⚠️ 時間時區注入失敗】: {e}，將使用預設無時間模式。")
     # ─────────────────────────────────────
 
-    for item in MODEL_POOLS:
+    # ⚡ 動態組裝本次的大腦輪詢清單 (Round-Robin)
+    # 取出這次的主力金鑰順序 (例如這次從第 10 把開始，下次從第 9 把開始)
+    start_idx = current_groq_idx
+    current_groq_idx = (current_groq_idx + 1) % len(GROQ_CLIENTS)
+    ordered_clients = [GROQ_CLIENTS[(start_idx + i) % len(GROQ_CLIENTS)] for i in range(len(GROQ_CLIENTS))]
+    
+    # 動態產生帶有正確金鑰順序的模型池 (完美保留階層結構)
+    DYNAMIC_MODEL_POOLS = []
+    
+    # 🌟 第一梯隊：頂級旗艦
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
+    DYNAMIC_MODEL_POOLS.extend([
+        {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},
+        {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},
+        {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # 🖼️ 看圖用
+        {"provider": "gemini", "model": "gemini-1.5-flash"} # 💬 純文字備用
+    ])
+
+    # 💎 第二梯隊：中堅主力
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"})
+    DYNAMIC_MODEL_POOLS.extend([
+        {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},
+        {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"}
+    ])
+
+    # ⚡ 第三梯隊：高效能輕量
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "meta-llama/llama-4-scout-17b-16e-instruct"})
+    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
+    DYNAMIC_MODEL_POOLS.extend([
+        {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},
+        {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},
+        {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"}
+    ])
+
+    # 🛡️ 第四梯隊：終極防線
+    DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"})
+
+    # 🚀 開始依序呼叫大腦
+    for item in DYNAMIC_MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
         is_vision_model = item.get("vision", False)
         
-        # 🎯 檢查點 1：最前端防線！如果是 groq 平台，但該金鑰位子沒填（client 為 None），直接跳過！
+        # 🎯 最前端防線：如果是 groq 平台且金鑰位子沒填（None），直接跳過！
         if provider == "groq" and item.get("client") is None:
             continue
 
@@ -632,7 +604,10 @@ async def fetch_ai_response(messages, require_vision=False):
         try:
             if provider == "groq":
                 target_client = item.get("client")
-                print(f"【🧠 嘗試】正在使用 Groq 模型 {model_name}...")
+                # 計算這把鑰匙是真實對應到你的第幾把 (1~10)，方便在控制台看 Debug
+                key_index = 10 - GROQ_CLIENTS.index(target_client)
+                print(f"【🧠 嘗試】使用 Groq {model_name} (第 {key_index} 組金鑰)...")
+                
                 chat_completion = await target_client.chat.completions.create(
                     messages=current_messages, model=model_name
                 )
@@ -640,7 +615,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 
             elif provider == "gemini":
                 if not GEMINI_API_KEY: continue
-                print(f"【🧠 嘗試】正在使用 Gemini 模型 {model_name}...")
+                print(f"【🧠 嘗試】使用 Gemini 模型 {model_name}...")
                 url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
@@ -651,7 +626,7 @@ async def fetch_ai_response(messages, require_vision=False):
                             
             elif provider == "openrouter":
                 if not OPENROUTER_API_KEY: continue
-                print(f"【🧠 嘗試】正在使用 OpenRouter 模型 {model_name}...")
+                print(f"【🧠 嘗試】使用 OpenRouter 模型 {model_name}...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://render.com", "X-Title": "7L Bot"}
                 async with aiohttp.ClientSession() as session:
@@ -661,12 +636,10 @@ async def fetch_ai_response(messages, require_vision=False):
                             return data["choices"][0]["message"]["content"]
                             
         except Exception as e:
-            # 🎯 檢查點 2：抓到任何錯誤（包含 429 Rate Limit）默默印出並換下一桶水
-            print(f"【⚠️ 備援觸發】{provider} 的 {model_name} 呼叫失敗: {e}。正在切換至下一個備用腦...")
+            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤或限流: {e}。直接切換下一顆大腦...")
             continue
 
-    # 🎯 終極防線：如果 10 把金鑰 + 所有備援池都繞完了全滅，讓 7L 自帶傲嬌語氣回應，而不是噴 None
-    return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我三十秒好不好？"
+    return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
 
 # ────────────────────────────────────────────────────────
 # 🌐 網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
