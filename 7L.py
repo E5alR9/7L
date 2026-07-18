@@ -357,11 +357,20 @@ async def on_message(message):
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
-        # 🌐 【⚡ 核心修改點 1】嘴巴還沒動，大腦一讀到訊息立刻在背景發動網路探針！
+        # 🌐 網路探針觸發邏輯 (關鍵字過濾 + 雙向機率分配)
         search_task = None
+        search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下"]
+        
         if user_prompt.strip():
-            print(f"【🌐 網路探針】7L 正在背景悄悄調查關鍵字：{user_prompt}")
-            search_task = asyncio.create_task(search_internet_meme(user_prompt))
+            if any(kw in user_prompt for kw in search_keywords):
+                # 模式 A：聽到關鍵字，啟動【即時輪詢模式】(從 10 倒數)
+                print(f"【🌐 即時探針】聽到搜尋指令！7L 正在調查：{user_prompt}")
+                search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
+            else:
+                # 模式 B：沒聽到關鍵字，但有 30% 機率自己無聊偷偷查【背景輪詢模式】(從 1 正數)
+                if random.random() < 0.3:
+                    print(f"【🌐 背景探針】7L 覺得好奇，偷偷在背景查：{user_prompt}")
+                    search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=False))
 
         formatted_prompt = (
             f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
