@@ -197,6 +197,64 @@ async def save_to_long_term_memory(channel_id, history):
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
 
+async def update_daily_diary(channel_id, recent_chat):
+    """🧠 每日核心日記系統：自動去重、高強度濃縮，以 YYYY-MM-DD 為 ID 寫入雲端日記"""
+    if db is None: return
+    try:
+        # 1. 取得台北時間的 YYYY-MM-DD 字串作為文檔 ID
+        tz = ZoneInfo("Asia/Taipei")
+        today_str = datetime.now(tz).strftime("%Y-%m-%d")
+        cid_str = str(channel_id)
+        
+        # 2. 將最近的對話轉換成純文字供 AI 閱讀
+        chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_chat if isinstance(msg['content'], str)])
+        if len(chat_text.strip()) < 40: 
+            return  # 對話太短（例如只有一兩句哈哈），就不浪費資源寫日記了
+            
+        # 3. 讀取 Firebase 裡今天該文檔的現有日記內容（為了進行疊加整合）
+        diary_ref = db.collection("daily_diary").document(today_str)
+        diary_doc = await diary_ref.get()
+        
+        existing_summary = ""
+        if diary_doc.exists:
+            diary_data = diary_doc.to_dict()
+            # 撈出該頻道今天稍早已經寫好的日記摘要
+            existing_summary = diary_data.get("summaries", {}).get(cid_str, "")
+            
+        # 4. 🧠 送入後台提示詞：強迫 AI 進行「大段話濃縮」與「重複的刪除」
+        diary_prompt = (
+            f"【後台任務：每日核心日記整合與高強度去重】\n"
+            f"妳是 7L 的日記記憶中樞。請將『今天稍早寫好的舊日記摘要』與『剛剛發生的新對話』融合成一份完全去重、精簡濃縮後的今日日記。\n\n"
+            f"⚠️ 核心守則：\n"
+            f"1. 【極致去重】：如果新對話和舊日記提到了重複的事件、笑話或話題，請刪除重複部分，只保留一次。\n"
+            f"2. 【高強度濃縮】：把大量來回的聊天廢話，濃縮成關鍵的一兩句話（例如：『跟主人聊了怕辣的糗事』）。\n"
+            f"3. 【字數限制】：融合成型後的總字數嚴格限制在 150 字以內，語氣可以是 7L 視角的傲嬌心聲或客觀精簡紀錄。\n"
+            f"4. 【拒絕穿幫】：絕對不要有任何前言（如：好的、這是摘要）或結尾，直接輸出整合後的日記內容。\n\n"
+            f"📖 [今天稍早的舊日記摘要]：\n{existing_summary if existing_summary else '(目前今日尚無紀錄)'}\n\n"
+            f"💬 [剛剛發生的新對話紀錄]：\n{chat_text}\n"
+        )
+        
+        messages = [{"role": "user", "content": diary_prompt}]
+        
+        # 💡 調用我們做好的後台免費小模型雙軌池（不花一毛錢，且有金鑰監獄保護）
+        updated_summary = await fetch_background_decision(messages)
+        
+        # 5. 確保回傳有效，並以 merge 模式安全寫入雲端
+        if updated_summary and "沉默" not in updated_summary:
+            payload = {
+                "date": today_str,
+                "summaries": {
+                    cid_str: updated_summary.strip()
+                },
+                "last_updated": time.time()
+            }
+            # 使用 merge=True，不同頻道只會更新自己的格子，每天全伺服器共用這一個文檔！
+            await diary_ref.set(payload, merge=True)
+            print(f"【📓 每日日記更新】成功整合今日 ({today_str}) 頻道 {cid_str} 的去重濃縮日記。")
+            
+    except Exception as e:
+        print(f"【⚠️ 每日日記寫入失敗】: {e}")
+        
 # ────────────────────────────────────────────────────────
 # 🖼️ 🎬 多媒體影格抽取工具
 # ────────────────────────────────────────────────────────
