@@ -118,20 +118,30 @@ else:
 async def fetch_from_long_term_memory(channel_id):
     if db is not None:
         try:
-            # 1. 🔍 先只掃描「目錄/標籤」層 (極輕量，不含對話原文)
+            history = []
+            
+            # 1. 🔍 讀取「目錄/標籤」層
             meta_ref = db.collection("channel_meta").document(str(channel_id))
             meta_doc = await meta_ref.get()
-            
-            history = []
             if meta_doc.exists:
                 meta_data = meta_doc.to_dict()
                 summary_tags = meta_data.get("summary_tags", "")
-                
-                # 如果有標籤，就把它當成潛意識塞入
                 if summary_tags:
                     history.append({"role": "system", "content": f"【長存記憶標籤】：{summary_tags}"})
+
+            # 2. 📓 讀取「今日濃縮日記」(✨ 這就是妳辛苦壓縮的精華！)
+            tz = ZoneInfo("Asia/Taipei")
+            today_str = datetime.now(tz).strftime("%Y-%m-%d")
+            diary_ref = db.collection("daily_diary").document(today_str)
+            diary_doc = await diary_ref.get()
             
-            # 2. 📥 決定要不要下載「完整對話」層
+            if diary_doc.exists:
+                diary_data = diary_doc.to_dict()
+                today_diary = diary_data.get("summaries", {}).get(str(channel_id), "")
+                if today_diary:
+                    history.append({"role": "system", "content": f"【妳腦海中今天的總結記憶】：{today_diary}"})
+            
+            # 3. 📥 讀取「最近 15 筆對話原文」(用來接續當下的話題)
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
