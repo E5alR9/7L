@@ -36,6 +36,12 @@ GROQ_API_KEY_10 = os.getenv("GROQ_API_KEY_10")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# ────────────────────────────────────────────────────────
+# 🔍 Tavily 十大金鑰矩陣初始化與輪詢指標
+# ────────────────────────────────────────────────────────
+TAVILY_KEYS = [k.strip() for k in os.getenv("TAVILY_KEYS", "").split(",") if k.strip()]
+current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
+current_background_idx = 0                                         # 背景搜：從第一個開始
 # ✨ Firebase 環境變數 (請將下載的 JSON 金鑰內容整串貼入此環境變數)
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 
@@ -663,28 +669,75 @@ async def fetch_ai_response(messages, require_vision=False):
     return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我三十秒好不好？"
 
 # ────────────────────────────────────────────────────────
-# 🌐 網路聯想探針（免金鑰搜尋工具）
+# 🌐 網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
 # ────────────────────────────────────────────────────────
-async def search_internet_meme(query):
-    """在背景偷偷上網查梗，限制只拿前 2 條精簡摘要"""
+async def fetch_tavily_single(query, api_key):
+    """執行單一 Tavily API 請求"""
+    url = "https://api.tavily.com/search"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json={"api_key": api_key, "query": query, "max_results": 2}, timeout=6) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                results = data.get("results", [])
+                if not results: raise ValueError("查無結果")
+                return "\n\n".join([f"標題: {r.get('title')}\n內容: {r.get('content')}" for r in results])
+            elif resp.status in [429, 403]: 
+                raise RuntimeError("此金鑰額度已滿或遭限流")
+            raise ValueError(f"API 異常狀態碼: {resp.status}")
+
+async def search_internet_meme(query, is_explicit=True):
+    """
+    動態輪詢核心：每次呼叫都會換下一把鑰匙平均分攤壓力。
+    如果抽中的鑰匙剛好壞了，會順著方向繼續找下一把備用。
+    """
+    global current_explicit_idx, current_background_idx
+    
     if not query or len(query.strip()) < 2:
         return "無效的關鍵字"
-    try:
-        from duckduckgo_search import DDGS
-        # 因為 DDGS 是同步阻塞的，我們用 asyncio.to_thread 丟到背景執行，避免卡死 Bot
-        def sync_search():
-            with DDGS() as ddgs:
-                return list(ddgs.text(query, max_results=2))
         
-        results = await asyncio.to_thread(sync_search)
-        if results:
-            summary = []
-            for r in results:
-                summary.append(f"標題: {r['title']}\n內容: {r['body']}")
-            return "\n\n".join(summary)
-    except Exception as e:
-        print(f"【⚠️ 網路探針故障】無法搜尋「{query}」: {e}")
-    return "網路訊號不佳，查不到相關資料。"
+    if not TAVILY_KEYS:
+        print("❌ 【警報】未設定 TAVILY_KEYS 環境變數！")
+        return "未設定搜尋金鑰"
+
+    total_keys = len(TAVILY_KEYS)
+    
+    # 根據判定模式，決定本次的主力鑰匙，並推進全域指標
+    if is_explicit:
+        # 即時查：取得目前指標，然後指標減 1 (若小於 0 則循環回到最後一把)
+        start_idx = current_explicit_idx
+        current_explicit_idx = (current_explicit_idx - 1) % total_keys
+        
+        # 建立嘗試清單 (例如從 9 開始往下: 9, 8, 7...0)
+        indices = [(start_idx - i) % total_keys for i in range(total_keys)]
+        mode_name = "即時模式 (平均輪詢 ↩️)"
+    else:
+        # 背景查：取得目前指標，然後指標加 1 (若大於總數則循環回到第 0 把)
+        start_idx = current_background_idx
+        current_background_idx = (current_background_idx + 1) % total_keys
+        
+        # 建立嘗試清單 (例如從 0 開始往上: 0, 1, 2...9)
+        indices = [(start_idx + i) % total_keys for i in range(total_keys)]
+        mode_name = "背景模式 (平均輪詢 ↪️)"
+
+    print(f"【🌐 矩陣出動】啟動 Tavily {mode_name} 搜尋: {query}")
+
+    for idx in indices:
+        key = TAVILY_KEYS[idx]
+        shown_key = f"...{key[-6:]}" if len(key) > 6 else "???"
+        
+        print(f"  └─> 本次分配使用第 [{idx + 1}/{total_keys}] 組金鑰 ({shown_key})")
+        
+        try:
+            result = await fetch_tavily_single(query, key)
+            if result:
+                print(f"  ✨ 【探針成功】第 [{idx + 1}] 組金鑰順利完成任務！")
+                return result
+        except RuntimeError:
+            print(f"  ⚠️ 第 [{idx + 1}] 組金鑰已滿或限流，自動順延下一組...")
+        except Exception as e:
+            print(f"  ⚠️ 第 [{idx + 1}] 組金鑰發生異常: {e}，跳過並嘗試下一組...")
+
+    return "網路訊號不佳，Tavily 金鑰矩陣已全面癱瘓。"
 
 # ────────────────────────────────────────────────────────
 # 🌐 6. 虛擬網頁與啟動區塊
