@@ -6,11 +6,12 @@ import asyncio
 import aiohttp
 import discord
 import threading
-import base64  # 用於將圖片轉為 Base64 格式
+import base64
+import time  # ✨ 新增這行：用來計算冷卻秒數
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 from datetime import datetime
-from zoneinfo import ZoneInfo  # Python 3.9+ 內建，支援直接鎖定台灣時區
+from zoneinfo import ZoneInfo
 # 用於影片關鍵影格抽樣
 try:
     import cv2
@@ -160,11 +161,12 @@ async def extract_video_frames(attachment, max_frames=4):
 # ────────────────────────────────────────────────────────
 # 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
 # ────────────────────────────────────────────────────────
-# 原始排列：從第 10 把到第 1 把
 GROQ_CLIENTS = [
     ai_client_10, ai_client_9, ai_client_8, ai_client_7, ai_client_6, 
     ai_client_5, ai_client_4, ai_client_3, ai_client_2, ai_client_1
 ]
+current_groq_idx = 0
+GROQ_KEY_COOLDOWNS = {}
 
 current_groq_idx = 0  # 紀錄目前輪到第幾把金鑰
 # 📜 全域共用規則
@@ -530,48 +532,61 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（動態輪詢大腦矩陣版）
+# 5. 🧠 跨平台備援核心（動態冷卻與精準出獄版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
-    global current_groq_idx
+    global current_groq_idx, GROQ_KEY_COOLDOWNS
     
-    # ─── 🕒 動態注入現實時間（台灣時區） ───
+    # ─── 🕒 動態注入現實時間 ───
     try:
         tw_time = datetime.now(ZoneInfo("Asia/Taipei"))
         time_str = tw_time.strftime("%Y年%m月%d日 %H點%M分")
         weekday_map = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"}
-        weekday_str = f"星期{weekday_map[int(tw_time.strftime('%w'))]}"
-        
-        time_context = (
-            f"\n\n【現實世界時間提示】現在時間是：{time_str} ({weekday_str})。"
-            f"請根據這個時間和妳的性格做出對應反應（例如：如果是深夜，傲嬌地催使用者去睡覺；如果是早晨，碎碎念他怎麼這麼早起）。"
-        )
+        time_context = f"\n\n【現實世界時間提示】現在時間是：{time_str} (星期{weekday_map[int(tw_time.strftime('%w'))]})。請根據時間和性格做出對應反應。"
         if messages and messages[0]["role"] == "system":
-            messages[0]["content"] = messages[0]["content"] + time_context
+            messages[0]["content"] += time_context
     except Exception as e:
-        print(f"【⚠️ 時間時區注入失敗】: {e}，將使用預設無時間模式。")
-    # ─────────────────────────────────────
+        print(f"【⚠️ 時間注入失敗】: {e}")
 
-    # ⚡ 動態組裝本次的大腦輪詢清單 (Round-Robin)
-    # 取出這次的主力金鑰順序 (例如這次從第 10 把開始，下次從第 9 把開始)
-    start_idx = current_groq_idx
-    current_groq_idx = (current_groq_idx + 1) % len(GROQ_CLIENTS)
-    ordered_clients = [GROQ_CLIENTS[(start_idx + i) % len(GROQ_CLIENTS)] for i in range(len(GROQ_CLIENTS))]
+    # ⚡ 動態過濾：把還在冷卻監獄裡的鑰匙剔除
+    current_time = time.time()
+    available_clients = []
     
-    # 動態產生帶有正確金鑰順序的模型池 (完美保留階層結構)
+    for i, client in enumerate(GROQ_CLIENTS):
+        key_index = 10 - i  # 換算成第 10 ~ 第 1 組
+        if key_index in GROQ_KEY_COOLDOWNS:
+            if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
+                print(f"【🟢 出獄通知】第 {key_index} 組 Groq 金鑰已過冷卻期，重新歸隊！")
+                del GROQ_KEY_COOLDOWNS[key_index]
+                if client: available_clients.append(client)
+            else:
+                pass # 🤫 還在關禁閉，默默跳過
+        else:
+            if client: available_clients.append(client)
+
+    # 決定這次的主力輪詢順序
+    if available_clients:
+        start_idx = current_groq_idx % len(available_clients)
+        current_groq_idx = (current_groq_idx + 1) % len(available_clients)
+        ordered_clients = [available_clients[(start_idx + i) % len(available_clients)] for i in range(len(available_clients))]
+    else:
+        print("【🚨 警告】所有 Groq 金鑰皆在冷卻中！自動啟用緊急備援池...")
+        ordered_clients = [] # Groq 全滅，下面會自動只剩 Gemini 和 OpenRouter
+        
+    # 動態產生模型池
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 第一梯隊：頂級旗艦
+    # 🌟 第一梯隊
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},
         {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},
-        {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True}, # 🖼️ 看圖用
-        {"provider": "gemini", "model": "gemini-1.5-flash"} # 💬 純文字備用
+        {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
+        {"provider": "gemini", "model": "gemini-1.5-flash"}
     ])
 
-    # 💎 第二梯隊：中堅主力
+    # 💎 第二梯隊
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"})
@@ -580,32 +595,24 @@ async def fetch_ai_response(messages, require_vision=False):
         {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"}
     ])
 
-    # ⚡ 第三梯隊：高效能輕量
+    # ⚡ 第三與第四梯隊
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "meta-llama/llama-4-scout-17b-16e-instruct"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},
         {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},
-        {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct:free"}
+        {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"}
     ])
-
-    # 🛡️ 第四梯隊：終極防線
-    DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"})
 
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
         provider = item["provider"]
         model_name = item["model"]
         is_vision_model = item.get("vision", False)
+        target_client = item.get("client")
         
-        # 🎯 最前端防線：如果是 groq 平台且金鑰位子沒填（None），直接跳過！
-        if provider == "groq" and item.get("client") is None:
-            continue
-
-        if require_vision and not is_vision_model:
-            continue  
-        if not require_vision and is_vision_model:
-            continue  
+        if require_vision and not is_vision_model: continue  
+        if not require_vision and is_vision_model: continue  
             
         current_messages = []
         for msg in messages:
@@ -613,9 +620,7 @@ async def fetch_ai_response(messages, require_vision=False):
             if isinstance(content, list): 
                 if not is_vision_model:
                     text_parts = [p["text"] for p in content if p["type"] == "text"]
-                    combined_text = " ".join(text_parts)
-                    combined_text = f"（系統提示：使用者傳了圖片/影片，但妳這個備用腦看不見，請傲嬌地抱怨、瞎猜或說妳不想看）\n{combined_text}"
-                    current_messages.append({"role": msg["role"], "content": combined_text})
+                    current_messages.append({"role": msg["role"], "content": f"（提示：使用者傳了圖片/影片，但妳看不見，請傲嬌抱怨）\n{' '.join(text_parts)}"})
                 else:
                     current_messages.append(msg)
             else:
@@ -623,18 +628,12 @@ async def fetch_ai_response(messages, require_vision=False):
 
         try:
             if provider == "groq":
-                target_client = item.get("client")
-                # 計算這把鑰匙是真實對應到你的第幾把 (1~10)，方便在控制台看 Debug
                 key_index = 10 - GROQ_CLIENTS.index(target_client)
                 print(f"【🧠 嘗試】使用 Groq {model_name} (第 {key_index} 組金鑰)...")
-                
-                chat_completion = await target_client.chat.completions.create(
-                    messages=current_messages, model=model_name
-                )
+                chat_completion = await target_client.chat.completions.create(messages=current_messages, model=model_name)
                 return chat_completion.choices[0].message.content
                 
-            elif provider == "gemini":
-                if not GEMINI_API_KEY: continue
+            elif provider == "gemini" and GEMINI_API_KEY:
                 print(f"【🧠 嘗試】使用 Gemini 模型 {model_name}...")
                 url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
@@ -644,11 +643,10 @@ async def fetch_ai_response(messages, require_vision=False):
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
                             
-            elif provider == "openrouter":
-                if not OPENROUTER_API_KEY: continue
+            elif provider == "openrouter" and OPENROUTER_API_KEY:
                 print(f"【🧠 嘗試】使用 OpenRouter 模型 {model_name}...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://render.com", "X-Title": "7L Bot"}
+                headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
@@ -656,8 +654,32 @@ async def fetch_ai_response(messages, require_vision=False):
                             return data["choices"][0]["message"]["content"]
                             
         except Exception as e:
-            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤或限流: {e}。直接切換下一顆大腦...")
-            continue
+            error_msg = str(e)
+            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤: {error_msg}。直接切換...")
+            
+            # 🎯 核心精華：動態解析 Groq 的 429 錯誤時間
+            if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
+                key_index = 10 - GROQ_CLIENTS.index(target_client)
+                # 使用 Regex 抓取 "try again in XhYmZ.Zs" 的時間
+                match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
+                if match:
+                    hours = int(match.group(1)) if match.group(1) else 0
+                    minutes = int(match.group(2)) if match.group(2) else 0
+                    seconds = float(match.group(3)) if match.group(3) else 0.0
+                    total_seconds = hours * 3600 + minutes * 60 + seconds
+                else:
+                    total_seconds = 60 # 解析失敗就預設關 60 秒
+                
+                # 給系統 5 秒緩衝時間，避免解封當下立刻撞車
+                total_seconds = max(5.0, total_seconds + 5)
+                GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
+                
+                if total_seconds > 60:
+                    print(f"【🛑 封印金鑰】第 {key_index} 組觸發上限，精準封印 {total_seconds/60:.1f} 分鐘。")
+                else:
+                    print(f"【🛑 封印金鑰】第 {key_index} 組觸發上限，精準封印 {total_seconds:.1f} 秒。")
+
+            continue # 繼續迴圈，找下一個能用的大腦
 
     return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
 
