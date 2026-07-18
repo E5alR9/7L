@@ -379,8 +379,14 @@ async def auto_chat_loop():
     valid_channels = []
     for cid in recent_channel_ids:
         channel_obj = bot.get_channel(cid)
-        if channel_obj and channel_obj.permissions_for(channel_obj.guild.me).send_messages:
-            valid_channels.append(channel_obj)
+        if channel_obj:
+            # 🛡️ 防呆：檢查是否為一般伺服器頻道 (避免 DM 頻道沒有 guild 屬性報錯)
+            if hasattr(channel_obj, "guild") and channel_obj.guild:
+                if channel_obj.permissions_for(channel_obj.guild.me).send_messages:
+                    valid_channels.append(channel_obj)
+            else:
+                # 若為私訊 (DM) 預設為可傳送
+                valid_channels.append(channel_obj)
 
     channel = None
     if valid_channels:
@@ -406,8 +412,10 @@ async def auto_chat_loop():
     if history:
         for msg in history:
             if msg["role"] == "user":
-                if isinstance(msg["content"], str):
-                    found_ids = re.findall(r'<@(\d+)>', msg["content"])
+                # ✨ 改用萬用的提取器，確保無論是純文字還是「圖片+文字」，都能抓出 @標記 的人！
+                text_content = extract_text_from_content(msg.get("content", ""))
+                if text_content:
+                    found_ids = re.findall(r'<@(\d+)>', text_content)
                     for uid in found_ids:
                         active_users.append(int(uid))
 
@@ -438,6 +446,7 @@ async def auto_chat_loop():
             f"字數請控制在 1~3 句話之內。絕對不可以唸出「【系統事件】」這幾個字！"
         )
 
+    # ⚠️ 這裡會用到 SYSTEM_SETTING，請確保它在其他區塊中有被宣告！
     messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": autonomous_prompt}]
     bot_reply = await fetch_ai_response(messages)
 
@@ -609,7 +618,7 @@ async def on_message(message):
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
-        f"{impression_text}"  # 👈 現在這裡就不會報錯了！
+        f"{impression_text}"
         f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，並記住妳對他的印象。)\n\n"
         
         f"【🧠 潛意識隱藏任務 1：動態記憶更新 (稱呼與印象)】\n"
@@ -752,6 +761,11 @@ async def on_message(message):
         bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
         bot_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
         bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
+        
+        # 🛡️ 防呆：如果 AI 只輸出了標籤導致被抹除變空字串，補上一句動作防止報錯
+        if not bot_reply: 
+            bot_reply = "（默默看著你）"
+
         # 更新本地快取記憶
         history.append(history_user_msg)
         history.append({"role": "assistant", "content": bot_reply})
@@ -840,6 +854,10 @@ async def on_message(message):
                         second_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
                         second_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
                         second_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
+                        
+                        # 🛡️ 防呆：防止被抹成空字串
+                        if not second_reply:
+                            second_reply = "原來如此..."
 
                         current_history.append({"role": "assistant", "content": second_reply})
                         if len(current_history) > 50: current_history = current_history[-50:]
@@ -909,6 +927,9 @@ async def on_message(message):
                             bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
                             bot_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
 
+                            # 🛡️ 防呆：防止被抹成空字串
+                            if not bot_reply: return
+
                             print(f"【✨ 大腦輸出】7L 成功插話: {bot_reply}")
                             current_history = HIPPOCAMPUS_CACHE[channel_id]
                             current_history.append({"role": "assistant", "content": bot_reply})
@@ -923,7 +944,6 @@ async def on_message(message):
                     print(f"【⚠️ 自主意識判斷失敗】: {e}")
 
             asyncio.create_task(process_autonomous_reply())
-
     
 
 # ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
