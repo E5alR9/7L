@@ -22,13 +22,11 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割全線完全體：無視空格、換行、逗號)
+# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割全線完全體)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 
-# 👇 懶人大招：自動辨識「空格、換行、逗號、分號」來切割金鑰！
-
-# 1. 捕捉 Gemini 金鑰陣列 (全面升級多槽輪詢完全體！)
+# 1. Gemini 金鑰陣列
 GEMINI_KEYS = [
     k.strip() 
     for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEYS") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEYS") or os.getenv("GEMINI_KEY") or "") 
@@ -37,21 +35,34 @@ GEMINI_KEYS = [
 GEMINI_API_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None  
 GEMINI_KEY_COOLDOWNS = {}  
 
-# 2. 捕捉 Groq 金鑰陣列
+# 2. Groq 金鑰陣列
 GROQ_KEYS = [
     k.strip() 
     for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS") or os.getenv("GROQ_API_KEY") or os.getenv("GROQ_KEYS") or os.getenv("GROQ_KEY") or "") 
     if k.strip()
 ]
-GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
 current_groq_idx = 0
-GROQ_KEY_COOLDOWNS = {}  # 👈 ✨ 【核心修正】補上這行！讓 Groq 監獄有地方住！
+GROQ_KEY_COOLDOWNS = {}  # ✨ 補上這行，解決 screenshot 的 NameError！
 
 # 💡 自動註冊 Groq 擴充槽 
 for i in range(1, 31):
     globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
 
-# 3. 捕捉 Tavily 金鑰陣列 
+# 初始化 Groq 客戶端矩陣
+try:
+    from groq import AsyncGroq
+    for i in range(1, 31):
+        k = globals()[f"GROQ_API_KEY_{i}"]
+        globals()[f"ai_client_{i}"] = AsyncGroq(api_key=k) if k else None
+except ImportError:
+    for i in range(1, 31):
+        globals()[f"ai_client_{i}"] = None
+    pass
+
+# 🔥【修正 Bug 1】：必須等上方 ai_client_1~30 生成完畢後，才能撈取 globals()！
+GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
+
+# 3. Tavily 金鑰陣列 
 TAVILY_KEYS = [
     k.strip() 
     for k in re.split(r'[\s,;]+', os.getenv("TAVILY_API_KEYS") or os.getenv("TAVILY_API_KEY") or os.getenv("TAVILY_KEYS") or os.getenv("TAVILY_KEY") or "") 
@@ -60,7 +71,7 @@ TAVILY_KEYS = [
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  
 current_background_idx = 0
 
-# 4. 🎯 修正對接：把 OpenRouter 統一集中到最頂端管理！
+# 4. OpenRouter 金鑰陣列
 OPENROUTER_KEYS = [
     k.strip() 
     for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEYS") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_KEYS") or os.getenv("OPENROUTER_KEY") or "") 
@@ -729,21 +740,19 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測）
+# 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - 完全體動態冷卻版）
 # ────────────────────────────────────────────────────────
 async def fetch_background_decision(messages):
+    """專門負責後台『旁聽判定』，僅調用 OpenRouter 的純免費小模型池，具備三軌動態解析冷卻"""
     global current_or_idx, OPENROUTER_KEY_COOLDOWNS
-    global current_groq_idx, GROQ_KEY_COOLDOWNS
-    global GEMINI_KEY_COOLDOWNS
-    
     current_time = time.time()
     
-    # ⚡ [後台] 動態過濾：OpenRouter 監獄檢查
+    # 動態過濾 OpenRouter 監獄
     available_or_keys = []
     for i, key in enumerate(OPENROUTER_KEYS):
         if i in OPENROUTER_KEY_COOLDOWNS:
             if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
-                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰已過冷卻期，加入後台運算！")
+                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰解鎖，加入後台運算。")
                 del OPENROUTER_KEY_COOLDOWNS[i]
                 if key: available_or_keys.append((i, key))
         else:
@@ -751,66 +760,54 @@ async def fetch_background_decision(messages):
 
     if available_or_keys:
         start_or_idx = current_or_idx % len(available_or_keys)
-        # 後台不主動推動全域指標，或者與前台共享輪詢
+        current_or_idx = (current_or_idx + 1) % len(available_or_keys)
         ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
     else:
         ordered_or_keys = []
 
-    # 🧠 後台專屬模型池（依據妳的 Log，優先跑免費小模型做快速判定）
+    # 🛠️ 建立 100% 免費後台模型矩陣池
     BACKGROUND_POOLS = []
-    for idx, key in ordered_or_keys: 
-        BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
-    for idx, key in ordered_or_keys: 
-        BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) 
-    for idx, key in ordered_or_keys: 
-        BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
 
-    # 🚀 後台輪詢開始
     for item in BACKGROUND_POOLS:
-        provider = item["provider"]
         model_name = item["model"]
-        loop_now = time.time()
+        target_key = item["key"]
+        key_idx = item["key_idx"]
         
-        if provider == "openrouter":
-            or_idx = item.get("key_idx")
-            if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]: 
-                continue
-
+        if key_idx in OPENROUTER_KEY_COOLDOWNS and time.time() < OPENROUTER_KEY_COOLDOWNS[key_idx]:
+            continue
+            
         try:
-            if provider == "openrouter":
-                target_key = item.get("key")
-                key_idx = item.get("key_idx")
-                if not target_key: continue
-                
-                print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
-                url = "https://openrouter.ai/api/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            return data["choices"][0]["message"]["content"]
-                        else:
-                            # ✨ 【關鍵升級 1】後台同步抽頭：動態抽取伺服器給的官方冷卻標頭
-                            retry_after = resp.headers.get("Retry-After", "")
-                            error_text = await resp.text()
-                            raise Exception(f"OpenRouter HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
-
+            print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data["choices"][0]["message"]["content"]
+                    else:
+                        retry_after = resp.headers.get("Retry-After", "")
+                        error_text = await resp.text()
+                        raise Exception(f"OpenRouter HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
+                        
         except Exception as e:
             error_msg = str(e)
             print(f"【⚠️ 後台切換】{model_name} 發生錯誤，正滑動至下一組...")
             
-            # ─── 🛠️ 【關鍵升級 2】移植前台的萬用全動態冷卻時間解析核心 ───
+            # ─── 🛠️ 移植前台的萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
             
-            # A 招：優先解析手動攔截注入的 [Retry-After: X]
+            # A 招：解 [Retry-After: X]
             retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
             if retry_match and retry_match.group(1).strip():
                 try: total_seconds = float(retry_match.group(1))
                 except: pass
             else:
-                # B 招：Groq/OpenRouter 標準格式 (try again in 1h2m3s)
+                # B 招：標準格式 try again in...
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
@@ -824,19 +821,14 @@ async def fetch_background_decision(messages):
                         try: total_seconds = float(match_sec.group(1))
                         except: pass
             
-            # ✨ 安全防線：加上 5 秒安全墊片，最少蹲 5 秒
             total_seconds = max(5.0, total_seconds + 5)
             
-            # ─── 🗂️ 根據不同 Provider 寫入冷卻（後台專屬 Log 標籤） ───
-            if provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
-                key_idx = item.get("key_idx")
+            if "429" in error_msg or "rate limit" in error_msg.lower():
                 OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
                 print(f"【🛑 封印金鑰(後台)】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+            continue
 
-            continue 
-
-    return "沉默" # 萬一後台全部炸裂，預設讓 Bot 保持沉默安全下線
-
+    return "沉默"
 
 # ────────────────────────────────────────────────────────
 # 7 ⚙️ 後台決策核心 (✨ 純免費小模型分工版 - 絕不佔用一線大腦額度)
