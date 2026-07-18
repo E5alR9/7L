@@ -1088,61 +1088,33 @@ async def fetch_ai_response(messages, require_vision=False):
 
     current_time = time.time()
     
-    # ⚡ 動態過濾：Groq 監獄初始檢查
-    available_clients = []
-    for i, client in enumerate(GROQ_CLIENTS):
-        key_index = i + 1  
-        if key_index in GROQ_KEY_COOLDOWNS:
-            if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
-                print(f"【🟢 出獄通知】第 {key_index} 組 Groq 金鑰已過冷卻期，重新歸隊！")
-                del GROQ_KEY_COOLDOWNS[key_index]
-                if client: available_clients.append(client)
-        else:
-            if client: available_clients.append(client)
-
-    if available_clients:
-        start_idx = current_groq_idx % len(available_clients)
-        current_groq_idx = (current_groq_idx + 1) % len(available_clients)
-        ordered_clients = [available_clients[(start_idx + i) % len(available_clients)] for i in range(len(available_clients))]
+    # ⚡ 移除開頭的「整把鑰匙沒收」邏輯，直接把所有有效金鑰排入輪詢，由後面的精準鎖來判斷！
+    
+    # --- Groq 輪詢陣列準備 ---
+    valid_groq_clients = [c for c in GROQ_CLIENTS if c]
+    if valid_groq_clients:
+        start_idx = current_groq_idx % len(valid_groq_clients)
+        current_groq_idx = (current_groq_idx + 1) % len(valid_groq_clients)
+        ordered_clients = [valid_groq_clients[(start_idx + i) % len(valid_groq_clients)] for i in range(len(valid_groq_clients))]
     else:
         ordered_clients = []
 
-    # ⚡ 動態過濾：OpenRouter 監獄初始檢查
-    available_or_keys = []
-    for i, key in enumerate(OPENROUTER_KEYS):
-        if i in OPENROUTER_KEY_COOLDOWNS:
-            if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
-                print(f"【🟢 出獄通知】第 {i+1} 組 OpenRouter 金鑰已過冷卻期，重新歸隊！")
-                del OPENROUTER_KEY_COOLDOWNS[i]
-                if key: available_or_keys.append((i, key))
-        else:
-            if key: available_or_keys.append((i, key))
-
-    if available_or_keys:
-        start_or_idx = current_or_idx % len(available_or_keys)
-        current_or_idx = (current_or_idx + 1) % len(available_or_keys)
-        ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
+    # --- OpenRouter 輪詢陣列準備 ---
+    valid_or_keys = [(i, key) for i, key in enumerate(OPENROUTER_KEYS) if key]
+    if valid_or_keys:
+        start_or_idx = current_or_idx % len(valid_or_keys)
+        current_or_idx = (current_or_idx + 1) % len(valid_or_keys)
+        ordered_or_keys = [valid_or_keys[(start_or_idx + j) % len(valid_or_keys)] for j in range(len(valid_or_keys))]
     else:
         ordered_or_keys = []
 
-    # ⚡ 動態過濾：Gemini 監獄初始檢查
-    available_gemini_keys = []
-    for i, key in enumerate(GEMINI_KEYS):
-        if i in GEMINI_KEY_COOLDOWNS:
-            if current_time >= GEMINI_KEY_COOLDOWNS[i]:
-                print(f"【🟢 出獄通知】第 {i+1} 組 Gemini 金鑰已過冷卻期，重新歸隊！")
-                del GEMINI_KEY_COOLDOWNS[i]
-                if key: available_gemini_keys.append((i, key))
-        else:
-            if key: available_gemini_keys.append((i, key))
-
-    ordered_gemini_keys = available_gemini_keys
-        
+    # --- Gemini 陣列準備 ---
+    ordered_gemini_keys = [(i, key) for i, key in enumerate(GEMINI_KEYS) if key]
     if not ordered_gemini_keys and GEMINI_KEYS:
         print("【🚨 Gemini 大赦】所有 Gemini 金鑰皆在冷卻中，強制啟動集體釋放防當機制！")
         ordered_gemini_keys = list(enumerate(GEMINI_KEYS))
     
-    # 🧠 動態產生混合大腦模型池
+    # 🧠 動態產生混合大腦模型池 (排序：優先頂級大腦 -> 再到免費小模型)
     DYNAMIC_MODEL_POOLS = []
     
     # 🌟 【第一梯隊：頂級大腦】
@@ -1180,17 +1152,22 @@ async def fetch_ai_response(messages, require_vision=False):
         target_client = item.get("client")
         
         loop_now = time.time()
+        
+        # 🛡️ 【重點升級】專屬鎖定：格式為 "金鑰索引_模型名稱"，不同模型互不干擾！
         if provider == "groq" and target_client:
             k_idx = GROQ_CLIENTS.index(target_client) + 1  
-            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]: continue
+            lock_key = f"{k_idx}_{model_name}"
+            if lock_key in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[lock_key]: continue
         
-        if provider == "openrouter":
+        elif provider == "openrouter":
             or_idx = item.get("key_idx")
-            if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]: continue
+            lock_key = f"{or_idx}_{model_name}"
+            if lock_key in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[lock_key]: continue
 
-        if provider == "gemini":
+        elif provider == "gemini":
             g_idx = item.get("key_idx")
-            if g_idx in GEMINI_KEY_COOLDOWNS and loop_now < GEMINI_KEY_COOLDOWNS[g_idx]: continue
+            lock_key = f"{g_idx}_{model_name}"
+            if lock_key in GEMINI_KEY_COOLDOWNS and loop_now < GEMINI_KEY_COOLDOWNS[lock_key]: continue
 
         if require_vision and not is_vision_model: continue  
         if not require_vision and is_vision_model: continue  
@@ -1257,13 +1234,12 @@ async def fetch_ai_response(messages, require_vision=False):
             # ─── 🛠️ 萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
             
-            # A 招：優先解析手動攔截注入的 [Retry-After: X]
+            # 解析邏輯維持不變...
             retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
             if retry_match and retry_match.group(1).strip():
                 try: total_seconds = float(retry_match.group(1))
                 except: pass
             else:
-                # B 招：Groq 標準格式 (try again in 1h2m3s)
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
@@ -1271,31 +1247,32 @@ async def fetch_ai_response(messages, require_vision=False):
                     seconds = float(match.group(3)) if match.group(3) else 0.0
                     total_seconds = hours * 3600 + minutes * 60 + seconds
                 else:
-                    # C 招：盲掃模糊格式
                     match_sec = re.search(r'(?:retry after|wait|in)\s+([0-9.]+)\s*(?:s|sec|second|seconds)', error_msg.lower())
                     if match_sec:
                         try: total_seconds = float(match_sec.group(1))
                         except: pass
             
-            # ✨ 安全防線：加上 5 秒安全墊片
             total_seconds = max(5.0, total_seconds + 5)
             
-            # ─── 🗂️ 根據不同 Provider 動態封印 ───
+            # ─── 🗂️ 根據不同 Provider 進行【特定模型】封印 ───
             if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
-                key_index = GROQ_CLIENTS.index(target_client) + 1  
-                GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
-                print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                k_idx = GROQ_CLIENTS.index(target_client) + 1  
+                lock_key = f"{k_idx}_{model_name}"
+                GROQ_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                print(f"【🛑 精準封印】第 {k_idx} 組 Groq 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
 
             elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_idx = item.get("key_idx")
-                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
-                print(f"【🛑 封印金鑰】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                lock_key = f"{key_idx}_{model_name}"
+                OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                print(f"【🛑 精準封印】第 {key_idx+1} 組 OpenRouter 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
 
             elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower()):
                 g_idx = item.get("key_idx")
                 if g_idx is not None:
-                    GEMINI_KEY_COOLDOWNS[g_idx] = time.time() + total_seconds
-                    print(f"【🛑 封印金鑰】第 {g_idx+1} 組 Gemini 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    lock_key = f"{g_idx}_{model_name}"
+                    GEMINI_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                    print(f"【🛑 精準封印】第 {g_idx+1} 組 Gemini 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
 
             continue 
 
