@@ -148,7 +148,7 @@ async def fetch_from_long_term_memory(channel_id, current_user_msg=""):
                 if not need_deep_recall and summary_tags:
                     # 將標籤切開（假設是用空格、逗號或頓號隔開），檢查是否有字眼出現在對話中
                     tag_list = [t.strip() for t in re.split(r'[\s,，、#]+', summary_tags) if len(t.strip()) > 1]
-                    # ✨ 修正 Bug 1：將 tag 轉為小寫再進行比對，防止因大小寫不一致（如標籤寫 Gemini 但訊息打 gemini）而無法命中
+                    # ✨ 修正 Bug 1：將 tag 轉為小寫再進行比對，防止因大小寫不一致而無法命中
                     matched_tags = [tag for tag in tag_list if tag.lower() in msg_lower]
                     if matched_tags:
                         need_deep_recall = True
@@ -186,6 +186,7 @@ async def fetch_from_long_term_memory(channel_id, current_user_msg=""):
                 
                 if compiled_diaries:
                     diary_content = "\n".join(compiled_diaries)
+                    # 🎯 這裡寫入的是 【妳被喚醒的核心歷史日記記憶】
                     history.append({"role": "system", "content": f"【妳被喚醒的核心歷史日記記憶】:\n{diary_content}"})
                     print(f"【📥 記憶讀取】成功精準加載頻道 {channel_id} 的歷史濃縮日記：{dates_to_fetch}")
             else:
@@ -218,13 +219,15 @@ async def save_to_long_term_memory(channel_id, history):
     # 限制上傳的對話長度，避免無止盡膨脹 (維持最近的 15 筆)
     raw_history_limit = 15
     
-    # 🎯 修正後的精準過濾邏輯：徹底移除所有暫時性系統提示標籤，防止雲端記憶爆炸
+    # 🎯 【重大修正點】：將過濾清單與前面 fetch 時注入的 system 標籤完全對齊！
+    # 這樣「核心歷史日記記憶」與「潛意識核心記憶標籤」就不會混進普通對話紀錄裡重複儲存了。
     clean_history = [
         msg for msg in history 
         if not (msg.get("role") == "system" and (
             "【長存記憶標籤】" in msg.get("content", "") or
             "【潛意識核心記憶標籤】" in msg.get("content", "") or 
-            "【妳被喚醒的今日核心記憶】" in msg.get("content", "")
+            "【妳被喚醒的今日核心記憶】" in msg.get("content", "") or
+            "【妳被喚醒的核心歷史日記記憶】" in msg.get("content", "")  # 👈 ✨ 新增這行，徹底堵住漏水點！
         ))
     ]
     
@@ -259,7 +262,7 @@ async def save_to_long_term_memory(channel_id, history):
                     # 💡 呼叫「後台雙軌備援模型池」來做苦工
                     summary_tags = await fetch_background_decision(messages)
                     
-                    # 確保回傳的不是錯誤或沉默
+                    # 確保回傳的不是錯誤 or 沉默
                     if summary_tags and "沉默" not in summary_tags:
                         meta_ref = db.collection("channel_meta").document(str(cid))
                         await meta_ref.set({"summary_tags": summary_tags.strip()}, merge=True)
@@ -306,7 +309,7 @@ async def update_daily_diary(channel_id, recent_chat):
             f"妳是 7L 的日記記憶中樞。請將『今天稍早寫好的舊日記摘要』與『剛剛發生的新對話』融合成一份完全去重、精簡濃縮後的今日日記。\n\n"
             f"⚠️ 核心守則：\n"
             f"1. 【極致去重】：如果新對話和舊日記提到了重複的事件、笑話或話題，請刪除重複部分，只保留一次。\n"
-            f"2. 【高強度濃縮】：把大量來回的聊天廢話，濃縮成關鍵的一兩句話。\n"
+            f"2. 【高強度濃縮】：把大量來回的聊天廢話，濃縮成關鍵的一邊一兩句話。\n"
             f"3. 【字數限制】：融合成型後的總字數嚴格限制在 150 字以內，語氣可以是 7L 視角的傲嬌心聲或客觀精簡紀錄。\n"
             f"4. 【拒絕穿幫】：絕對不要有任何前言或結尾，直接輸出整合後的日記內容。\n\n"
             f"📖 [今天稍早的舊日記摘要]：\n{existing_summary if existing_summary else '(目前今日尚無紀錄)'}\n\n"
@@ -315,7 +318,7 @@ async def update_daily_diary(channel_id, recent_chat):
         
         messages = [{"role": "user", "content": diary_prompt}]
         
-        # 💡 調用我們做好的後台免費小模型雙軌池（不花一毛錢，且有金鑰監獄保護）
+        # 💡 調用我們做好的後台免費小模型雙軌池
         updated_summary = await fetch_background_decision(messages)
         
         # 5. 確保回傳有效，並以 merge 模式安全寫入雲端
@@ -633,10 +636,6 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
     except Exception as e:
         print(f"【⚠️ Firebase 錯誤】儲存人物記憶失敗: {e}")
 
-# ────────────────────────────────────────────────────────
-# 5. 💬 訊息處理核心 (✨ 自由意志連發 + 自主潛意識改名 + 🤖 機器人防無窮迴圈智能對話優化完全體)
-# ────────────────────────────────────────────────────────
-
 # 🤖 機器人互動核心快取設定（請放在 on_message 的外面）
 BOT_INTERACTION_COUNTS = {}  # 紀錄每個頻道中，機器人連續對話的次數 (channel_id: int)
 MAX_BOT_TURNS = 3            # 限制機器人之間最多來回聊幾句（可自由調整 2~4 句最自然）
@@ -711,6 +710,7 @@ async def on_message(message):
     # 🤖 自動盲測：如果是全新用戶，立刻在背景自動建檔
     if not user_profile or not user_profile.get("custom_name"):
         current_custom_name = message.author.display_name
+        current_impression = ""
         await save_user_profile(
             user_id=user_id,
             username=message.author.name,
@@ -719,6 +719,7 @@ async def on_message(message):
         )
     else:
         current_custom_name = user_profile.get("custom_name")
+        current_impression = user_profile.get("impression", "")
         # 🔄 如果對方的 Discord 名字變了，也在背景默默更新
         if user_profile.get("display_name") != message.author.display_name:
             await save_user_profile(
@@ -729,7 +730,6 @@ async def on_message(message):
             )
 
     called_name = current_custom_name
-    current_impression = user_profile.get("impression", "")
     impression_text = f"- 妳對他深深刻在腦海的印象: {current_impression}\n" if current_impression else ""
 
     # 💡 建立身分提示與【潛意識隱藏任務】，動態塞入大腦系統設定中
@@ -1053,18 +1053,34 @@ async def on_message(message):
                         bot_reply = await fetch_ai_response(actual_messages)
                         
                         if bot_reply:
-                            # 提取新暱稱
+                            # 提取新暱稱與新印象 (✨ 修正 2：補上原本遺漏的暱稱與印象雙重提取)
                             match3 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
-                            if match3:
-                                new_nickname3 = match3.group(1).strip()
-                                if new_nickname3 and new_nickname3 != current_custom_name:
+                            imp_match3 = re.search(r"\|\|NEW_IMPRESSION:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
+                            
+                            new_nickname3 = match3.group(1).strip() if match3 else None
+                            new_impression3 = imp_match3.group(1).strip() if imp_match3 else None
+                            
+                            if new_nickname3 or new_impression3:
+                                final_name3 = new_nickname3 if new_nickname3 and new_nickname3 != current_custom_name else None
+                                final_imp3 = new_impression3 if new_impression3 and new_impression3 != current_impression else None
+                                
+                                if final_name3 or final_imp3:
                                     await save_user_profile(
                                         user_id=user_id,
                                         username=message.author.name,
                                         display_name=message.author.display_name,
-                                        custom_name=new_nickname3
+                                        custom_name=final_name3,
+                                        impression=final_imp3
                                     )
+                                    if final_name3: print(f"🧬【大腦進化-插話】7L 將 {message.author.display_name} 的稱呼修改為：{final_name3}")
+                                    if final_imp3: print(f"🧬【大腦進化-插話】7L 將 {message.author.display_name} 的印象更新為：{final_imp3}")
                             
+                            # ─── 💬 自由意志：自主插話時也完整支援 AI 連發下一句話的設定 (✨ 修正 3) ───
+                            ai_next_sentence3 = None
+                            continue_match3 = re.search(r"\|\|CONTINUE_MESSAGE:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
+                            if continue_match3:
+                                ai_next_sentence3 = continue_match3.group(1).strip()
+
                             # 🚨【核心安全鎖】自主插話輸出前，全面雙重抹除所有標籤，拒絕露出馬腳
                             bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
                             bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
@@ -1082,6 +1098,20 @@ async def on_message(message):
                             HIPPOCAMPUS_CACHE[channel_id] = final_history
                             
                             await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
+                            
+                            # ✨ 執行插話時的自由意志連發：追加打字延遲與快取同步
+                            if ai_next_sentence3:
+                                print(f"【✨ 自由連發-插話】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence3}")
+                                await asyncio.sleep(1.8)  # ⏳ 貼心模擬 1.8 秒的打字延遲
+                                
+                                current_history = HIPPOCAMPUS_CACHE.get(channel_id, final_history)
+                                current_history.append({"role": "assistant", "content": ai_next_sentence3})
+                                if len(current_history) > 50: current_history = current_history[-50:]
+                                HIPPOCAMPUS_CACHE[channel_id] = current_history
+                                
+                                await message.channel.send(ai_next_sentence3, allowed_mentions=smart_mentions)
+                                final_history = current_history
+
                             await save_to_long_term_memory(channel_id, final_history)
                     else:
                         print(f"【🤫 保持沉默】後台小模型判定：「{cleaned_decision or '沉默'}」。7L 繼續潛水，未動用 Groq 大腦。")
@@ -1496,6 +1526,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
                 print(f"【🛑 精準封印】第 {key_idx+1} 組 OpenRouter 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
 
+                                                    # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower()):
                 g_idx = item.get("key_idx")
                 if g_idx is not None:
@@ -1610,7 +1641,7 @@ async def search_internet_meme(query, is_explicit=True):
         
         try:
             result = await fetch_tavily_single(query, key)
-            if result:                                        # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if result:
                 print(f"  ✨ 【探針成功】第 [{idx + 1}] 組金鑰順利完成任務！")
                 return result
         except RuntimeError:
