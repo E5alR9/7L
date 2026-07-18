@@ -161,12 +161,39 @@ async def save_to_long_term_memory(channel_id, history):
             # 1. 儲存完整對話到 history 集合
             doc_ref = db.collection("channel_history").document(str(channel_id))
             await doc_ref.set({"history": clean_history, "last_updated": time.time()}, merge=True)
-            
-            # 2. (預留) 這裡未來可以呼叫 AI 幫忙生 tags，然後存到 meta 集合
-            # meta_ref = db.collection("channel_meta").document(str(channel_id))
-            # await meta_ref.set({"summary_tags": "預留的 AI 產生標籤"}, merge=True)
-            
             print(f"【💾 記憶鞏固】頻道 {channel_id} 的短期記憶已同步至雲端。")
+            
+            # 2. 🧠 背景開智：自動生成對話摘要標籤 (不阻塞主流程)
+            async def generate_and_save_tags(cid, recent_chat):
+                try:
+                    # 把對話轉成純文字，讓小模型看得懂
+                    chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_chat if isinstance(msg['content'], str)])
+                    if len(chat_text.strip()) < 20: 
+                        return # 對話太短就不浪費資源總結了
+                    
+                    summary_prompt = (
+                        f"【後台任務：對話記憶總結】\n"
+                        f"請將以下的對話紀錄，總結成 1~3 個核心記憶標籤（例如：#小明喜歡吃辣 #大家在聊遊戲 #7L傲嬌吐槽）。\n"
+                        f"請嚴格限制只回傳標籤文字，絕對不要有任何其他廢話或前言：\n\n"
+                        f"{chat_text}"
+                    )
+                    
+                    messages = [{"role": "user", "content": summary_prompt}]
+                    
+                    # 💡 呼叫我們剛剛做好的「後台雙軌備援模型池」來做苦工
+                    summary_tags = await fetch_background_decision(messages)
+                    
+                    # 確保回傳的不是錯誤或沉默
+                    if summary_tags and "沉默" not in summary_tags:
+                        meta_ref = db.collection("channel_meta").document(str(cid))
+                        await meta_ref.set({"summary_tags": summary_tags.strip()}, merge=True)
+                        print(f"【🏷️ 雲端標籤生成】頻道 {cid} 成功寫入長期記憶標籤：{summary_tags.strip()}")
+                except Exception as e:
+                    print(f"【⚠️ 標籤生成失敗】: {e}")
+
+            # ⚡ 使用 asyncio.create_task 在背景執行，不會卡住前台機器人聊天速度
+            asyncio.create_task(generate_and_save_tags(channel_id, clean_history))
+            
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
 
