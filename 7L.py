@@ -1562,8 +1562,8 @@ async def fetch_ai_response(messages, require_vision=False):
     EMERGENCY_SMALL_MODEL = "llama-3.1-8b-instant"
     
     # ⚡ 直接穿透！輪詢註冊的 Groq 客戶端陣列
-   if GROQ_CLIENTS:
-    for idx, client in enumerate(GROQ_CLIENTS, start=1):
+    if GROQ_CLIENTS:
+        for idx, client in enumerate(GROQ_CLIENTS, start=1):
             if client is None:
                 continue
             try:
