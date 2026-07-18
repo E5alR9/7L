@@ -22,27 +22,33 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割懶人版：無視空格、換行、逗號)
+# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割全線完全體：無視空格、換行、逗號)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 
 # 👇 懶人大招：自動辨識「空格、換行、逗號、分號」來切割金鑰！
 
-# 1. 捕捉 Gemini 金鑰 (就算裡面塞了多把也能自動過濾，目前安全取第一把供視覺使用)
+# 1. 捕捉 Gemini 金鑰陣列 (支援未來擴充，並安全提取第一把供主視覺與基礎呼叫)
 _raw_gemini = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEY", "")) if k.strip()]
 GEMINI_API_KEY = _raw_gemini[0] if _raw_gemini else None
 
 # 2. 捕捉 Groq 金鑰陣列
 GROQ_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS", "")) if k.strip()]
 
-# 💡 自動註冊 Groq 擴充槽 (相容舊代碼)
+# 💡 自動註冊 Groq 擴充槽 (完美相容妳後面第 53-60 行動態生成的 ai_client_1~30 矩陣)
 for i in range(1, 31):
     globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
 
-# 3. 捕捉 Tavily 金鑰陣列
+# 3. 捕捉 Tavily 金鑰陣列 (完美對接主動搜與背景搜的 current_explicit_idx 變數)
 TAVILY_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("TAVILY_KEYS", "")) if k.strip()]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
 current_background_idx = 0
+
+# 4. 🎯 修正對接：把 OpenRouter 統一集中到最頂端管理！(避免與中段 198 行衝突)
+OPENROUTER_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEY", "")) if k.strip()]
+current_or_idx = 0
+OPENROUTER_KEY_COOLDOWNS = {}
+
 
 # ✨ Firebase 環境變數
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
