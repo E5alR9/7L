@@ -429,7 +429,7 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
         print(f"【⚠️ Firebase 錯誤】儲存人物記憶失敗: {e}")
 
 # ────────────────────────────────────────────────────────
-# 5. 💬 訊息處理核心 (✨ 自主潛意識改名 + 人物記憶雙軌優化版)
+# 5. 💬 訊息處理核心 (✨ 自由意志連發 + 自主潛意識改名雙軌優化版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -492,20 +492,25 @@ async def on_message(message):
 
     called_name = current_custom_name
 
-    # 💡 建立身分提示與【潛意識隱藏任務】，動態塞入大腦系統設定中
+    # 💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
     identity_note = (
         f"\n[目前對話者資訊]\n"
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
         f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n\n"
-        f"【🧠 潛意識隱藏任務：動態稱呼分析】\n"
+        f"【🧠 潛意識隱藏任務 1：動態稱呼分析】\n"
         f"你在與使用者聊天時，請在背景默默分析對方的說話風格、自我介紹、或互動脈絡。\n"
         f"如果你發現了更適合稱呼對方的方式（例如對方提到「我叫小明」、或你想幫他取個專屬外號），請在你的「回覆內容最尾端」加上隱藏標籤 `||NEW_NAME:新稱呼||`。\n"
         f"⚠️ 嚴格執行守則：\n"
         f"1. 如果目前的稱呼已經很完美，或者當下不需要改名，就「絕對不要」加上這個標籤。\n"
         f"2. 標籤必須格式嚴格正確，例如：`||NEW_NAME:爆肝超人||`。\n"
-        f"3. 沒必要時請保持沉默，只有當你「強烈決定」要更新大腦對他的稱呼時才使用。\n"
+        f"3. 沒必要時請保持沉默，只有當你「強烈決定」要更新大腦對他的稱呼時才使用。\n\n"
+        f"【🧠 潛意識隱藏任務 2：真實人類連發訊息（自由意志）】\n"
+        f"為了模擬現實人類在 Discord 上熱絡聊天時『連續傳送多條訊息』的真實感，如果你在回覆完第一句話後，內心『強烈渴望』想要主動追加補述、吐槽、撒嬌或轉換話題，請在妳的回覆最末端加上隱藏標籤 `||CONTINUE_MESSAGE:妳強烈想連發的第二句話內容||`。\n"
+        f"⚠️ 嚴格執行守則：\n"
+        f"1. 只有在妳靈魂深處真的想連發時才使用。如果覺得講完一句就夠了，就『絕對不要』加上這個標籤！\n"
+        f"2. 連發內容嚴格限制在 1 句話之內，且絕對禁止使用任何換行符號（Enter）。\n"
     )
     dynamic_system_setting = SYSTEM_SETTING + identity_note
 
@@ -537,7 +542,6 @@ async def on_message(message):
         if message.attachments:
             for attachment in message.attachments:
                 c_type = attachment.content_type or ""
-                # 處理圖片
                 if any(t in c_type for t in ["image/png", "image/jpeg", "image/webp", "image/gif"]):
                     try:
                         img_bytes = await attachment.read()
@@ -550,7 +554,6 @@ async def on_message(message):
                     except Exception as e:
                         print(f"【⚠️ 圖片處理失敗】: {e}")
                         
-                # 處理影片
                 elif any(t in c_type for t in ["video/mp4", "video/quicktime", "video/webm"]):
                     frames = await extract_video_frames(attachment, max_frames=4)
                     if frames:
@@ -589,9 +592,14 @@ async def on_message(message):
                     custom_name=new_nickname
                 )
                 print(f"🧬【大腦自主進化】7L 在聊天中自動將 {message.author.display_name} 的稱呼修改為：{new_nickname}")
-            
-            # 🧹 完美擦除證據：把隱藏標籤從回覆中刪掉，不要讓 Discord 的人看到！
             bot_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", bot_reply).strip()
+
+        # ─── 💬 自由意志：攔截與處理 AI 自己想主動連發的下一句話 ───
+        ai_next_sentence = None
+        continue_match = re.search(r"\|\|CONTINUE_MESSAGE:\s*(.*?)\s*\|\|", bot_reply)
+        if continue_match:
+            ai_next_sentence = continue_match.group(1).strip()
+            bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:.*?\|\|", "", bot_reply).strip() # 完美擦除證據
 
         # 更新本地快取記憶
         history.append(history_user_msg)
@@ -602,11 +610,25 @@ async def on_message(message):
         # 🚀 先讓 7L 直接秒回第一句
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
+        # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話（完全模擬人類連發習慣） ───
+        if ai_next_sentence:
+            print(f"【✨ 自由連發】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence}")
+            await asyncio.sleep(1.8) # ⏳ 貼心模擬 1.8 秒的打字延遲，讓互動更像真人
+            
+            current_history = HIPPOCAMPUS_CACHE[channel_id]
+            current_history.append({"role": "assistant", "content": ai_next_sentence})
+            if len(current_history) > 50: current_history = current_history[-50:]
+            HIPPOCAMPUS_CACHE[channel_id] = current_history
+            
+            await message.channel.send(ai_next_sentence, allowed_mentions=smart_mentions)
+            await save_to_long_term_memory(channel_id, current_history)
+
         # ─── ⚡ 不懂裝懂的智慧背景開智 ───
         confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
         is_confused = any(kw in bot_reply for kw in confusion_keywords)
 
-        if is_explicit_search or is_confused:
+        # 💡 優化：只有當 AI 自己沒想連發訊息，且踩到不懂的關鍵字時，才跑原本的背景探針補救，防範雙重發話衝突
+        if not ai_next_sentence and (is_explicit_search or is_confused):
             if is_confused and not is_explicit_search:
                 print(f"【🔍 觸發補救】7L 發現自己不懂，正在背景偷偷查：{user_prompt}")
                 search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=False))
@@ -630,7 +652,7 @@ async def on_message(message):
                             f"【系統提示】妳剛剛回覆對方時表現出不懂（妳回了：「{bot_reply}」）。"
                             f"但妳偷偷上網查到了新知識：{brain_insight}。"
                             f"請傲嬌地傳第二則短訊息，假裝妳其實知道、恍然大悟或轉移話題掩飾尷尬。"
-                            f"字數限制在 1 句話以內，絕對禁止出現括號或後台提示字眼！"
+                            f"字數限制在 1 句話內，絕對禁止出現括號或後台提示字眼！"
                         )
                     else:
                         follow_up_prompt = (
@@ -644,7 +666,6 @@ async def on_message(message):
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
-                        # 🧬 攔截背景補救可能的改名標籤
                         match2 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", second_reply)
                         if match2:
                             new_nickname2 = match2.group(1).strip()
@@ -671,7 +692,7 @@ async def on_message(message):
 
             asyncio.create_task(background_enlightenment(search_task, is_remedy=is_confused))
 
-    # ── 情況 B：純文字群聊旁聽（🧠 核心升級：改由後台免費小模型進行判定分工） ──
+    # ── 情況 B：純文字群聊旁聽（🧠 由後台免費小模型進行判定分工） ──
     else:
         if message.content.strip():
             formatted_bypass = (
@@ -709,7 +730,6 @@ async def on_message(message):
                         bot_reply = await fetch_ai_response(actual_messages)
                         
                         if bot_reply:
-                            # 🧬 攔截背景插話的改名標籤
                             match3 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", bot_reply)
                             if match3:
                                 new_nickname3 = match3.group(1).strip()
