@@ -22,24 +22,27 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定 (✨ 終極大招：逗號分隔、自動映射無限擴充模式)
+# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割懶人版：無視空格、換行、逗號)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# 👇 核心大招：從單一環境變數中讀取所有 Groq 金鑰，並用英文逗號切割
-raw_groq_keys = os.getenv("GROQ_API_KEYS", "")
-GROQ_KEYS = [k.strip() for k in raw_groq_keys.split(",") if k.strip()]
+# 👇 懶人大招：自動辨識「空格、換行、逗號、分號」來切割金鑰！
 
-# 💡 超強黑科技：為完美相容妳中後段程式碼中可能硬編碼的 GROQ_API_KEY_1~10 變數
-# 我們在背景自動將切開的金鑰註冊到系統全域中（預留自動支援到 30 組）
+# 1. 捕捉 Gemini 金鑰 (就算裡面塞了多把也能自動過濾，目前安全取第一把供視覺使用)
+_raw_gemini = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEY", "")) if k.strip()]
+GEMINI_API_KEY = _raw_gemini[0] if _raw_gemini else None
+
+# 2. 捕捉 Groq 金鑰陣列
+GROQ_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS", "")) if k.strip()]
+
+# 💡 自動註冊 Groq 擴充槽 (相容舊代碼)
 for i in range(1, 31):
     globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
 
-# 🔍 Tavily 金鑰矩陣初始化與輪詢指標 (同樣支援逗號動態擴充)
-TAVILY_KEYS = [k.strip() for k in os.getenv("TAVILY_KEYS", "").split(",") if k.strip()]
+# 3. 捕捉 Tavily 金鑰陣列
+TAVILY_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("TAVILY_KEYS", "")) if k.strip()]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
-current_background_idx = 0                                         # 背景搜：從第一個開始
+current_background_idx = 0
 
 # ✨ Firebase 環境變數
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
@@ -159,16 +162,13 @@ GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().g
 current_groq_idx = 0
 GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間
 
-# 🎯 2. OpenRouter 多槽輪詢陣列與冷卻監獄 (✨ 單一變數切割版)
-# 從環境變數讀取單一字串，假設格式為 "key1,key2,key3..."
-openrouter_env_string = os.getenv("OPENROUTER_API_KEY", "")
+# 🎯 2. OpenRouter 多槽輪詢陣列與冷卻監獄 (✨ 萬用切割懶人版)
+# 自動抓取所有 OpenRouter 金鑰，只要有空格、換行或逗號隔開就能完美切開！
+OPENROUTER_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEY", "")) if k.strip()]
 
-# 利用逗號切割字串，並自動過濾掉空白或沒填的部分
-OPENROUTER_KEYS = [
-    k.strip() for k in openrouter_env_string.split(",") if k.strip()
-]
 current_or_idx = 0
 OPENROUTER_KEY_COOLDOWNS = {}
+
 
 # 📜 全域共用規則
 COMMON_RULES = """
