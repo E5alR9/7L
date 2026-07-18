@@ -1132,35 +1132,53 @@ async def check_all_apis(ctx):
             # ✨ 大絕招：給整個併發探測加上「絕對斬斷鎖」（8 秒後強制放棄，絕不卡死）
             results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=8.0)
             
-            # 繪製美觀的 Markdown 表格，改為逐行裝載以便計算長度
-            report_lines = []
-            report_lines.append(f"{'API 項目':<14} | {'狀態狀況':<14} | {'備註 / 剩餘資訊'}")
-            report_lines.append("-" * 55)
+            # 🗂️ 依據 API 種類進行分類裝箱
+            categories = {
+                "Groq": [],
+                "OpenRouter": [],
+                "Tavily": [],
+                "Gemini": []
+            }
+            
+            # 將探測結果分發到對應的分類盒子裡
             for name, status, memo in results:
-                report_lines.append(f"{name:<14} | {status:<14} | {memo}")
+                if name.startswith("Groq"): 
+                    categories["Groq"].append((name, status, memo))
+                elif name.startswith("OpenRouter"): 
+                    categories["OpenRouter"].append((name, status, memo))
+                elif name.startswith("Tavily"): 
+                    categories["Tavily"].append((name, status, memo))
+                elif name.startswith("Gemini"): 
+                    categories["Gemini"].append((name, status, memo))
+                else: 
+                    categories.setdefault("其他", []).append((name, status, memo))
+
+            # 先更新初始的讀取訊息
+            await msg.edit(content="**🔮 【7L 全線 API 金鑰健康矩陣】**\n*(✅ 探測完成！正在依據 API 種類為妳分段顯示報告 👇)*")
             
-            # 將所有行組合成完整字串測試長度
-            test_full_text = "**🔮 【7L 全線 API 金鑰健康矩陣】**\n```markdown\n" + "\n".join(report_lines) + "\n```"
-            
-            # ✂️ 如果字數安全（少於 1900 字元），直接編輯原訊息送出
-            if len(test_full_text) <= 1900:
-                await msg.edit(content=test_full_text)
-            else:
-                # ⚠️ 如果超過 Discord 2000 字元限制，啟動分段發送協議
-                await msg.edit(content="**🔮 【7L 全線 API 金鑰健康矩陣】**\n*(⚠️ 探測完成！但因妳的金鑰數量太多，表格超過 Discord 長度限制，系統自動為妳分段顯示 👇)*")
+            # 📦 依序獨立發送每個分類的專屬表格
+            for cat_name, cat_results in categories.items():
+                if not cat_results: 
+                    continue # 如果該分類完全沒有金鑰，就跳過不顯示
                 
-                current_chunk = "```markdown\n"
-                for row in report_lines:
-                    # 如果目前的塊加上新的一行會超過 1850 字元（保留一點緩衝空間），就先送出目前的塊
+                # 建立該分類的專屬表頭
+                current_chunk = f"**[{cat_name} 專屬矩陣]**\n```markdown\n"
+                current_chunk += f"{'API 項目':<14} | {'狀態狀況':<14} | {'備註 / 剩餘資訊'}\n"
+                current_chunk += "-" * 55 + "\n"
+                
+                for name, status, memo in cat_results:
+                    row = f"{name:<14} | {status:<14} | {memo}\n"
+                    
+                    # ✂️ 雙重極限防護：萬一單一分類(例如妳放了 50 把 Groq)還是超過 Discord 上限，自動在內部續接
                     if len(current_chunk) + len(row) > 1850:
-                        current_chunk += "\n```"
+                        current_chunk += "```"
                         await ctx.send(current_chunk)
-                        current_chunk = "```markdown\n" + row + "\n"
+                        current_chunk = f"**[{cat_name} 專屬矩陣 (續)]**\n```markdown\n" + row
                     else:
-                        current_chunk += row + "\n"
+                        current_chunk += row
                 
-                # 送出最後剩下沒發完的表格部分
-                if current_chunk.strip() != "```markdown":
+                # 送出該分類剩下的內容，確保結尾加上 markdown 標籤
+                if current_chunk.strip() and not current_chunk.endswith("```"):
                     current_chunk += "```"
                     await ctx.send(current_chunk)
                     
