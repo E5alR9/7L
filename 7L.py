@@ -741,19 +741,20 @@ async def on_message(message):
     
 
 # ────────────────────────────────────────────────────────
-# 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - 完全體動態冷卻版）
+# 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OpenRouter + Groq 雙軌完全體）
 # ────────────────────────────────────────────────────────
 async def fetch_background_decision(messages):
-    """專門負責後台『旁聽判定』，僅調用 OpenRouter 的純免費小模型池，具備三軌動態解析冷卻"""
+    """專門負責後台『旁聽判定』，優先調用 OpenRouter 免費池，全掛時自動切換至 Groq 備援支援"""
     global current_or_idx, OPENROUTER_KEY_COOLDOWNS
+    global current_groq_idx, GROQ_KEY_COOLDOWNS
     current_time = time.time()
     
-    # 動態過濾 OpenRouter 監獄
+    # ⚡ 動態過濾：OpenRouter 監獄初始檢查
     available_or_keys = []
     for i, key in enumerate(OPENROUTER_KEYS):
         if i in OPENROUTER_KEY_COOLDOWNS:
             if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
-                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰解鎖，加入後台運算。")
+                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰解鎖，回歸後台戰線。")
                 del OPENROUTER_KEY_COOLDOWNS[i]
                 if key: available_or_keys.append((i, key))
         else:
@@ -766,41 +767,81 @@ async def fetch_background_decision(messages):
     else:
         ordered_or_keys = []
 
-    # 🛠️ 建立 100% 免費後台模型矩陣池 (吸納 #7 的所有模型，確保廣度)
-    BACKGROUND_POOLS = []
-    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
-    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"})
-    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
-    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "openrouter/free"})
+    # ⚡ 動態過濾：Groq 監獄初始檢查（用於 OpenRouter 全掛時的極限救援）
+    available_clients = []
+    for i, client in enumerate(GROQ_CLIENTS):
+        key_index = i + 1  
+        if key_index in GROQ_KEY_COOLDOWNS:
+            if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
+                print(f"【🟢 出獄通知(後台)】第 {key_index} 組 Groq 金鑰解鎖，加入後台備援核心。")
+                del GROQ_KEY_COOLDOWNS[key_index]
+                if client: available_clients.append(client)
+        else:
+            if client: available_clients.append(client)
 
+    if available_clients:
+        start_idx = current_groq_idx % len(available_clients)
+        current_groq_idx = (current_groq_idx + 1) % len(available_clients)
+        ordered_clients = [available_clients[(start_idx + k) % len(available_clients)] for k in range(len(available_clients))]
+    else:
+        ordered_clients = []
+
+    # 🛠️ 建立雙軌混合後台模型池
+    BACKGROUND_POOLS = []
+    
+    # 🌟 【第一梯隊：OpenRouter 100% 全免費高強度小模型】
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"})
+
+    # 🚀 【第二梯隊：Groq 火力全開極速防線】（當 OpenRouter 全滅時自動觸發）
+    for client in ordered_clients: 
+        BACKGROUND_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
+
+    # 巡航調用模型
     for item in BACKGROUND_POOLS:
+        provider = item["provider"]
         model_name = item["model"]
-        target_key = item["key"]
-        key_idx = item["key_idx"]
+        loop_now = time.time()
         
-        if key_idx in OPENROUTER_KEY_COOLDOWNS and time.time() < OPENROUTER_KEY_COOLDOWNS[key_idx]:
-            continue
+        # 即時冷卻防爆檢查
+        if provider == "openrouter":
+            key_idx = item["key_idx"]
+            target_key = item["key"]
+            if key_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[key_idx]: continue
+        elif provider == "groq":
+            target_client = item["client"]
+            k_idx = GROQ_CLIENTS.index(target_client) + 1
+            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]: continue
             
         try:
-            print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data["choices"][0]["message"]["content"]
-                    else:
-                        retry_after = resp.headers.get("Retry-After", "")
-                        error_text = await resp.text()
-                        raise Exception(f"OpenRouter HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
+            if provider == "openrouter":
+                print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            return data["choices"][0]["message"]["content"]
+                        else:
+                            retry_after = resp.headers.get("Retry-After", "")
+                            error_text = await resp.text()
+                            raise Exception(f"OpenRouter HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
+                            
+            elif provider == "groq":
+                key_index = GROQ_CLIENTS.index(target_client) + 1
+                print(f"【🧠 後台決策 💥 備援觸發】OpenRouter 已失效，轉向 Groq {model_name} (第 {key_index} 組金鑰)...")
+                chat_completion = await target_client.chat.completions.create(messages=messages, model=model_name)
+                return chat_completion.choices[0].message.content
                         
         except Exception as e:
             error_msg = str(e)
-            print(f"【⚠️ 後台切換】{model_name} 發生錯誤，正滑動至下一組...")
+            print(f"【⚠️ 後台切換】{provider} 的 {model_name} 發生錯誤，正滑動至下一組...")
             
-            # ─── 🛠️ 移植前台的萬用全動態冷卻時間解析核心（徹底幹掉死板 60 秒） ───
+            # ─── 🛠️ 移植萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
             
             # A 招：解 [Retry-After: X]
@@ -825,13 +866,17 @@ async def fetch_background_decision(messages):
             
             total_seconds = max(5.0, total_seconds + 5)
             
-            if "429" in error_msg or "rate limit" in error_msg.lower():
-                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
-                print(f"【🛑 封印金鑰(後台)】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+            if "429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower():
+                if provider == "openrouter":
+                    OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
+                    print(f"【🛑 封印金鑰(後台)】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                elif provider == "groq":
+                    key_index = GROQ_CLIENTS.index(target_client) + 1
+                    GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
+                    print(f"【🛑 封印金鑰(後台)】第 {key_index} 組 Groq 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
             continue
 
-    return "沉默"  # 萬一後台全垮，保底選擇潛水保持沉默
-
+    return "沉默"  # 萬一雙軌全部大雪崩，保底選擇潛水保持沉默
 
 # ────────────────────────────────────────────────────────
 # 6. 🧠 前台主對話核心（主力重裝大腦 + 全動態冷卻完全體）
