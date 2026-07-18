@@ -1586,8 +1586,17 @@ async def fetch_ai_response(messages, require_vision=False):
                 continue
 
     # ─── 🛑 超級無敵終極天災保底線 ───
-    # 如果連完全隔開的 8B 小模型都全滅（例如徹底斷網、或 Groq 伺服器集體大崩潰）
-    return "（……連最後一絲隔開的應急小模型都斷電了……睡著）💤……"
+    # 如果連完全隔開的 8B 小模型都全滅
+    print("【🚨 終極災難】所有模型全滅且斷線，啟動防禦性全機斷電！")
+    
+    # 💡 必須主動在該頻道發送（假設此處抓得到 channel 或 ctx）
+    try:
+        await channel.send("（……連最後一絲隔開的應急小模型都斷電了……睡著）💤……")
+    except Exception:
+        pass # 如果是徹底斷網，發不出去就直接算了
+        
+    await bot.close()
+    os._exit(0)  # 真正強制拔插頭
 
 # ────────────────────────────────────────────────────────
 # 8.🌐網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
