@@ -598,14 +598,16 @@ async def on_message(message):
             )
 
     called_name = current_custom_name
+    current_impression = user_profile.get("impression", "")
+    impression_text = f"- 妳對他深深刻在腦海的印象: {current_impression}\n" if current_impression else ""
 
-    # 💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
+    # 💡 建立身分提示與【潛意識隱藏任務】，動態塞入大腦系統設定中
     identity_note = (
         f"\n[目前對話者資訊]\n"
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
-        f"{impression_text}"
+        f"{impression_text}"  # 👈 現在這裡就不會報錯了！
         f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，並記住妳對他的印象。)\n\n"
         
         f"【🧠 潛意識隱藏任務 1：動態記憶更新 (稱呼與印象)】\n"
@@ -827,6 +829,7 @@ async def on_message(message):
                         # 🚨【核心安全鎖】背景開智輸出前，全面雙重抹除所有標籤，絕不穿幫
                         second_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
                         second_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
+                        second_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
 
                         current_history.append({"role": "assistant", "content": second_reply})
                         if len(current_history) > 50: current_history = current_history[-50:]
@@ -894,6 +897,7 @@ async def on_message(message):
                             # 🚨【核心安全鎖】自主插話輸出前，全面雙重抹除所有標籤，拒絕露出馬腳
                             bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
                             bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
+                            bot_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
 
                             print(f"【✨ 大腦輸出】7L 成功插話: {bot_reply}")
                             current_history = HIPPOCAMPUS_CACHE[channel_id]
