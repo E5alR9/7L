@@ -22,7 +22,7 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割全線完全體)
+# 1. 🔑 金鑰與基礎設定 (✨ 萬用切割全線完全體 - 三軌完美整合版)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 
@@ -33,7 +33,8 @@ GEMINI_KEYS = [
     if k.strip()
 ]
 GEMINI_API_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None  
-GEMINI_KEY_COOLDOWNS = {}  
+current_gemini_idx = 0          # ✨ 新增：Gemini 後台輪詢專用指針
+GEMINI_KEY_COOLDOWNS = {}       # ✨ 確保 Gemini 專屬冷卻鎖在這裡初始化
 
 # 2. Groq 金鑰陣列
 GROQ_KEYS = [
@@ -42,7 +43,7 @@ GROQ_KEYS = [
     if k.strip()
 ]
 current_groq_idx = 0
-GROQ_KEY_COOLDOWNS = {}  # ✨ 補上這行，解決 screenshot 的 NameError！
+GROQ_KEY_COOLDOWNS = {}  # ✨ 解決 screenshot 與後台的 Groq NameError
 
 # 💡 真正無限流：完全動態註冊 Groq 擴充槽與客戶端矩陣（完美防禦 429，解除 30 組硬編碼限制）
 GROQ_CLIENTS = []
@@ -78,7 +79,7 @@ OPENROUTER_KEYS = [
     if k.strip()
 ]
 current_or_idx = 0
-OPENROUTER_KEY_COOLDOWNS = {}
+OPENROUTER_KEY_COOLDOWNS = {} # ✨ 完美的 OpenRouter 專屬冷卻鎖
 
 # ✨ Firebase 環境變數
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
@@ -1003,12 +1004,16 @@ async def on_message(message):
 
 
 # ────────────────────────────────────────────────────────
-# 6. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OpenRouter + Groq 雙軌完全體）
+# 6. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OR + Groq + Gemini 三軌完全體）
 # ────────────────────────────────────────────────────────
+
+
+
 async def fetch_background_decision(messages):
-    """專門負責後台『旁聽判定』，優先調用 OpenRouter 免費池，全掛時自動切換至 Groq 備援支援"""
+    """專門負責後台『旁聽判定』，優先順序：OpenRouter 免費池 -> Groq 備援 -> Gemini 輕量防線"""
     global current_or_idx, OPENROUTER_KEY_COOLDOWNS
     global current_groq_idx, GROQ_KEY_COOLDOWNS
+    global current_gemini_idx, GEMINI_KEY_COOLDOWNS
     current_time = time.time()
     
     # 🧹 自動清理過期的模型鎖 (OpenRouter)
@@ -1023,7 +1028,13 @@ async def fetch_background_decision(messages):
             print(f"【🟢 出獄通知(後台)】Groq 模型 {k} 解鎖，加入後台備援核心。")
             del GROQ_KEY_COOLDOWNS[k]
 
-    # ⚡ 動態抓取所有有效金鑰並進行輪詢排序 (不再整把踢除，保留給其他未被鎖的模型用)
+    # 🧹 自動清理過期的模型鎖 (Gemini)
+    for k, v in list(GEMINI_KEY_COOLDOWNS.items()):
+        if current_time >= v:
+            print(f"【🟢 出獄通知(後台)】Gemini 模型 {k} 解鎖，回歸後台守護網。")
+            del GEMINI_KEY_COOLDOWNS[k]
+
+    # ⚡ 動態抓取所有有效金鑰並進行輪詢排序
     available_or_keys = [(i, key) for i, key in enumerate(OPENROUTER_KEYS) if key]
     if available_or_keys:
         start_or_idx = current_or_idx % len(available_or_keys)
@@ -1040,7 +1051,15 @@ async def fetch_background_decision(messages):
     else:
         ordered_clients = []
 
-    # 🛠️ 建立雙軌混合後台模型池
+    available_gemini_keys = [(i, key) for i, key in enumerate(GEMINI_KEYS) if key]
+    if available_gemini_keys:
+        start_gemini_idx = current_gemini_idx % len(available_gemini_keys)
+        current_gemini_idx = (current_gemini_idx + 1) % len(available_gemini_keys)
+        ordered_gemini_keys = [available_gemini_keys[(start_gemini_idx + j) % len(available_gemini_keys)] for j in range(len(available_gemini_keys))]
+    else:
+        ordered_gemini_keys = []
+
+    # 🛠️ 建立三軌混合後台模型池 (嚴格排序：OpenRouter -> Groq -> Gemini)
     BACKGROUND_POOLS = []
     
     # 🌟 【第一梯隊：OpenRouter 100% 全免費高強度小模型】
@@ -1049,9 +1068,13 @@ async def fetch_background_decision(messages):
     for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
     for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"})
 
-    # 🚀 【第二梯隊：Groq 火力全開極速防線】（當 OpenRouter 全滅時自動觸發）
+    # 🚀 【第二梯隊：Groq 火力全開極速防線】
     for client in ordered_clients: 
         BACKGROUND_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
+
+    # 🧱 【第三梯隊：Gemini 全免費高效率輕量矩陣】
+    for idx, key in ordered_gemini_keys: BACKGROUND_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-3.1-flash-lite"})
+    for idx, key in ordered_gemini_keys: BACKGROUND_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-2.5-flash-lite"})
 
     # 巡航調用模型
     for item in BACKGROUND_POOLS:
@@ -1059,7 +1082,7 @@ async def fetch_background_decision(messages):
         model_name = item["model"]
         loop_now = time.time()
         
-        # 即時冷卻防爆檢查 (✨ 改為檢查「金鑰+模型」的專屬鎖)
+        # 即時冷卻防爆檢查
         if provider == "openrouter":
             key_idx = item["key_idx"]
             target_key = item["key"]
@@ -1070,6 +1093,11 @@ async def fetch_background_decision(messages):
             k_idx = GROQ_CLIENTS.index(target_client) + 1
             lock_key = f"{k_idx}_{model_name}"
             if lock_key in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[lock_key]: continue
+        elif provider == "gemini":
+            key_idx = item["key_idx"]
+            target_key = item["key"]
+            lock_key = f"{key_idx}_{model_name}"
+            if lock_key in GEMINI_KEY_COOLDOWNS and loop_now < GEMINI_KEY_COOLDOWNS[lock_key]: continue
             
         try:
             if provider == "openrouter":
@@ -1092,21 +1120,35 @@ async def fetch_background_decision(messages):
                 print(f"【🧠 後台決策 💥 備援觸發】OpenRouter 已失效，轉向 Groq {model_name} (第 {key_index} 組金鑰)...")
                 chat_completion = await target_client.chat.completions.create(messages=messages, model=model_name)
                 return chat_completion.choices[0].message.content
+
+            elif provider == "gemini":
+                print(f"【🧠 後台決策 🛡️ 終極防線】OR 與 Groq 已打光，啟用 Gemini {model_name} (第 {key_idx+1} 組金鑰)...")
+                # 💡 使用 Google 官方的 OpenAI 相容端點，省去複雜的角色格式轉換成本
+                url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            return data["choices"][0]["message"]["content"]
+                        else:
+                            retry_after = resp.headers.get("Retry-After", "")
+                            error_text = await resp.text()
+                            raise Exception(f"Gemini HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
                         
         except Exception as e:
             error_msg = str(e)
             print(f"【⚠️ 後台切換】{provider} 的 {model_name} 發生錯誤，正滑動至下一組...")
             
-            # ─── 🛠️ 移植萬用全動態冷卻時間解析核心 ───
+            # ─── 🛠️ 萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
             
-            # A 招：解 [Retry-After: X]
             retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
             if retry_match and retry_match.group(1).strip():
                 try: total_seconds = float(retry_match.group(1))
                 except: pass
             else:
-                # B 招：標準格式 try again in...
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
@@ -1114,7 +1156,6 @@ async def fetch_background_decision(messages):
                     seconds = float(match.group(3)) if match.group(3) else 0.0
                     total_seconds = hours * 3600 + minutes * 60 + seconds
                 else:
-                    # C 招：盲掃模糊格式
                     match_sec = re.search(r'(?:retry after|wait|in)\s+([0-9.]+)\s*(?:s|sec|second|seconds)', error_msg.lower())
                     if match_sec:
                         try: total_seconds = float(match_sec.group(1))
@@ -1123,13 +1164,15 @@ async def fetch_background_decision(messages):
             total_seconds = max(5.0, total_seconds + 5)
             
             if "429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower():
-                # ✨ 精準將「特定金鑰的特定模型」打入大牢，不影響該金鑰的其他模型
                 if provider == "openrouter":
                     OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
                     print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 OpenRouter 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
                 elif provider == "groq":
                     GROQ_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
                     print(f"【🛑 封印模型(後台)】第 {k_idx} 組 Groq 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                elif provider == "gemini":
+                    GEMINI_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
+                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 Gemini 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
             continue
 
     return "沉默"
@@ -1211,10 +1254,22 @@ async def fetch_ai_response(messages, require_vision=False):
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
         
-    # 🧱 【第二梯隊：小模型與最後防線】
+    # 🧱 【第二梯隊：Gemini 多模態神經網路家族 (全部自帶圖片解析能力)】
+    # 1. 綜合最強主力：Gemini 3.5 Flash (目前最聰明且穩定的前沿模型)
     for idx, key in ordered_gemini_keys:
-        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-1.5-flash", "vision": True})
-        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-1.5-flash"})
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-3.5-flash", "vision": True})
+    
+    # 2. 深度推理大腦：Gemini 3.1 Pro Preview (遇到複雜問題時的智商擔當)
+    for idx, key in ordered_gemini_keys:
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-3.1-pro-preview", "vision": True})
+        
+    # 3. 極速輕量保底：Gemini 3.1 Flash-Lite (反應神速，用來擋 API 風暴與備援)
+    for idx, key in ordered_gemini_keys:
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-3.1-flash-lite", "vision": True})
+        
+    # 4. 終極保底網：上一代的 Gemini 2.5 Flash-Lite
+    for idx, key in ordered_gemini_keys:
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-2.5-flash-lite", "vision": True})
 
     # 💡 OpenRouter 100% 全免費高強度小模型矩陣防線
     for idx, key in ordered_or_keys: 
@@ -1471,7 +1526,7 @@ async def check_all_apis(ctx):
                     status = "🟡 模型冷卻中" if locked_models else "🟢 200 可用"
                     return f"Groq-{index:02d}", status, f"{lock_memo}尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
-                    # ✨ 真實 API 乾了，顯示已用完，但不加鎖，讓它自己解開
+                                        # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     return f"Groq-{index:02d}", "🛑 已用完 (429)", f"{lock_memo}請等待模型鎖自然解開"
                 elif resp.status == 401:
                     return f"Groq-{index:02d}", "❌ 401 無效", "請檢查金鑰"
@@ -1526,7 +1581,6 @@ async def check_all_apis(ctx):
                 if resp.status == 200: 
                     return f"Tavily-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
                 elif resp.status in [429, 403]: 
-                    # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     return f"Tavily-{index:02d}", "🛑 已用完 (429)", "免費額度耗盡"
                 else: 
                     return f"Tavily-{index:02d}", f"❌ {resp.status} 錯誤", ""
