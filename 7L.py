@@ -1198,7 +1198,9 @@ async def check_all_apis(ctx):
                 current_chunk += "-" * 55 + "\n"
                 
                 for name, status, memo in cat_results:
-                    row = f"{name:<14} | {status:<14} | {memo}\n"
+                    # 🛡️ 終極防護：強制把太長的錯誤訊息截斷，並拿掉換行符號避免破壞表格
+                    safe_memo = str(memo).replace('\n', ' ')[:80] + ("..." if len(str(memo)) > 80 else "")
+                    row = f"{name:<14} | {status:<14} | {safe_memo}\n"
                     
                     # ✂️ 雙重極限防護：萬一單一分類(例如妳放了 50 把 Groq)還是超過 Discord 上限，自動在內部續接
                     if len(current_chunk) + len(row) > 1850:
@@ -1217,8 +1219,9 @@ async def check_all_apis(ctx):
             # 🚑 發生卡死時的強制補救輸出
             await msg.edit(content="⚠️ **API 探測超時 (Timeout)！**\n部分 API 伺服器無回應，為了防止系統癱瘓已強制中斷。")
         except Exception as e:
-            # 攔截其他未知錯誤
-            await msg.edit(content=f"❌ **API 探測發生未知錯誤**：\n```\n{e}\n```")
+            # 🛡️ 終極防護：攔截其他未知錯誤，並強制截斷防止超過 Discord 上限
+            safe_error = str(e)[:1800]
+            await msg.edit(content=f"❌ **API 探測發生未知錯誤**：\n```python\n{safe_error}\n```")
 
 # ────────────────────────────────────────────────────────
 # 10 🌐 虛擬網頁與啟動區塊
