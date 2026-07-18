@@ -333,7 +333,7 @@ async def auto_chat_loop():
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心 (✨ 平行大腦開智版)
+# 4. 💬 訊息處理核心 (✨ 新分工理念雙軌優化版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -365,13 +365,13 @@ async def on_message(message):
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
 
-    # ── 情況 A：有人標記或回覆 Bot ──
+    # ── 情況 A：有人標記或回覆 Bot（前台主力聊天，直接調用大腦） ──
     if should_trigger:
         if not user_prompt and not message.attachments:
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
-        # 🌐 【⚡ 核心修改點 1】判斷是否「主動」要求查詢
+        # 🌐 判斷是否「主動」要求查詢
         search_task = None
         is_explicit_search = False
         search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下"]
@@ -443,16 +443,11 @@ async def on_message(message):
         # 🚀 先讓 7L 直接秒回第一句
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-        # ─── ⚡ 【核心修改點 2】不懂裝懂的智慧背景開智 ───
-        
-        # 判斷 7L 剛剛講的話裡面，有沒有透漏出她「其實不懂」
+        # ─── ⚡ 不懂裝懂的智慧背景開智 ───
         confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
         is_confused = any(kw in bot_reply for kw in confusion_keywords)
 
-        # 只有在「主動要求查」或「7L 自己發現不懂」時，才啟動第二句連發
         if is_explicit_search or is_confused:
-            
-            # 如果是剛才沒查，現在發現不懂才要查，立刻啟動背景搜尋！
             if is_confused and not is_explicit_search:
                 print(f"【🔍 觸發補救】7L 發現自己不懂，正在背景偷偷查：{user_prompt}")
                 search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=False))
@@ -462,7 +457,7 @@ async def on_message(message):
                     if not task: return
                     web_knowledge = await task
                     if not web_knowledge or "網路訊號不佳" in web_knowledge:
-                        return # 查不到就算了，不要勉強回話
+                        return
                         
                     brain_insight = f"（🧠 7L 的雲端大腦聯想補完：關於剛才的「{user_prompt}」，網路上的真實意思是：\n{web_knowledge}）"
                     
@@ -472,7 +467,6 @@ async def on_message(message):
                     print(f"【🔮 頓悟連發】7L 查到新知識了，正在組織第二句反擊...")
                     
                     if is_remedy:
-                        # 補救模式：假裝早就知道
                         follow_up_prompt = (
                             f"【系統提示】妳剛剛回覆對方時表現出不懂（妳回了：「{bot_reply}」）。"
                             f"但妳偷偷上網查到了新知識：{brain_insight}。"
@@ -480,12 +474,11 @@ async def on_message(message):
                             f"字數限制在 1 句話以內，絕對禁止出現括號或後台提示字眼！"
                         )
                     else:
-                        # 正常回報模式
                         follow_up_prompt = (
                             f"【系統提示】妳剛剛先秒回了對方（妳回了：「{bot_reply}」）。"
                             f"現在妳幫他查到詳細資料了：{brain_insight}。"
                             f"請傲嬌地把這個答案告訴他，順便吐槽他怎麼連這個都不懂。"
-                            f"字數限制在 1~2 句話以內，絕對禁止出現括號或後台提示字眼！"
+                            f"字數限制在 1~2 句話之內，絕對禁止出現括號或後台提示字眼！"
                         )
                         
                     second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + current_history + [{"role": "user", "content": follow_up_prompt}]
@@ -498,17 +491,15 @@ async def on_message(message):
                         
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
                 
-                    # 同步記憶到 Firebase
                     await save_to_long_term_memory(channel_id, current_history)
                     print(f"【💾 雲端開智成功】7L 已經徹底記住這個知識並完成備份。")
                     
                 except Exception as e:
                     print(f"【⚠️ 背景開智失敗】: {e}")
 
-            # 將剛才的任務丟進背景執行
             asyncio.create_task(background_enlightenment(search_task, is_remedy=is_confused))
 
-    # ── 情況 B：純文字群聊旁聽 ──
+    # ── 情況 B：純文字群聊旁聽（🧠 核心升級：改由後台免費小模型進行判定分工） ──
     else:
         if message.content.strip():
             formatted_bypass = (
@@ -521,44 +512,55 @@ async def on_message(message):
             
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-            # 🧠 拔除機率限制，讓 7L 每次都自己思考要不要插話
+            # 🛠️ 建立極其精簡的後台快速分類提示詞
             interject_prompt = (
-                f"【系統事件（不可對外洩漏）】妳正在旁聽群聊。請根據目前的聊天氣氛、話題，或是看對方順不順眼，來決定妳現在有沒有想「插話」、「吐槽」或「撒嬌」的衝動？\n"
-                f"👉 如果妳覺得沒什麼好說的、或者現在不想理他們，請嚴格且『只』回覆一個字：「無」。\n"
-                f"👉 如果妳決定要插話，請直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                f"【後台任務：旁聽判定】妳正在旁聽群聊。請根據目前的聊天氣氛與話題，站在7L的角色立場，評估現在有沒有需要「插話」、「吐槽」或「回應」的必要？\n"
+                f"👉 如果妳覺得話題無趣、與妳無關、或者應保持沉默，請嚴格且『只』回覆兩個字：「沉默」。\n"
+                f"👉 如果妳覺得這個話題非常有意思，或者被提及，有強烈的衝動想要插話回應，請嚴格且『只』回覆兩個字：「插話」。\n"
+                f"❌ 絕對不要回答任何其他內容，只能回答「沉默」或「插話」！"
             )
             
             interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
             
-            # 放進背景執行，避免卡住其他人的正常聊天
+            # 放進背景執行，絕不拖慢正常群聊速度
             async def process_autonomous_reply():
                 try:
-                    bot_reply = await fetch_ai_response(interject_messages)
+                    # 1. 🥇 呼叫專門的後台小模型池進行「極速二分法」篩選，不浪費 Groq 額度
+                    decision = await fetch_background_decision(interject_messages)
                     
-                    # 判斷 7L 是不是決定保持沉默 (過濾掉可能的標點符號)
-                    is_silent = not bot_reply or bot_reply.strip() in ["無", "無。", "無！", "無~", "「無」", "無...", "無."]
-                    
-                    if not is_silent:
-                        print(f"【💬 自主意識】7L 決定插話了！(回覆: {bot_reply})")
-                        current_history = HIPPOCAMPUS_CACHE[channel_id]
-                        current_history.append({"role": "assistant", "content": bot_reply})
-                        if len(current_history) > 50: current_history = current_history[-50:]
-                        HIPPOCAMPUS_CACHE[channel_id] = current_history
+                    # 2. 只有在小模型判定「有衝動要插話」時，才喚醒一線的 Groq/Gemini 大模型
+                    if decision and "插話" in decision:
+                        print(f"【💬 自主意識】後台判定有插話衝動！正式移交前台主力大腦生成台詞...")
                         
-                        await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
-                        await save_to_long_term_memory(channel_id, current_history)
+                        chat_prompt = (
+                            f"【自主意識爆發】妳剛剛在旁聽群聊時，覺得非常有衝動想要插話吐槽或回應！\n"
+                            f"請根據妳傲嬌的性格，直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                        )
+                        actual_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": chat_prompt}]
+                        
+                        bot_reply = await fetch_ai_response(actual_messages)
+                        
+                        if bot_reply:
+                            print(f"【✨ 大腦輸出】7L 成功插話: {bot_reply}")
+                            current_history = HIPPOCAMPUS_CACHE[channel_id]
+                            current_history.append({"role": "assistant", "content": bot_reply})
+                            if len(current_history) > 50: current_history = current_history[-50:]
+                            HIPPOCAMPUS_CACHE[channel_id] = current_history
+                            
+                            await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
+                            await save_to_long_term_memory(channel_id, current_history)
                     else:
-                        print(f"【🤫 保持沉默】7L 看了看訊息，決定不想理他們。")
+                        # 完美潛水，零消耗
+                        print(f"【🤫 保持沉默】後台小模型判定：「沉默」。7L 繼續潛水，未動用 Groq 大腦。")
                 except Exception as e:
                     print(f"【⚠️ 自主意識判斷失敗】: {e}")
 
-            # 啟動非同步思考
             asyncio.create_task(process_autonomous_reply())
 
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（雙核 20 槽動態冷卻完美版）
+# 5. 🧠 前台主對話核心（主力重裝大腦 + 2026 免費神模版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
@@ -615,10 +617,10 @@ async def fetch_ai_response(messages, require_vision=False):
     else:
         ordered_or_keys = []
         
-    # 🧠 動態產生 20 槽混合大腦模型池
+    # 🧠 動態產生混合大腦模型池（前台專用）
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 第一梯隊 (主力重裝)
+    # 🌟 第一梯隊 (主力重裝 - 70B~120B 頂級傲嬌靈魂)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
     
@@ -627,32 +629,28 @@ async def fetch_ai_response(messages, require_vision=False):
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
         
-    # 基礎 Gemini
+    # 基礎 Gemini（眼角膜與穩定核心）
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
         {"provider": "gemini", "model": "gemini-1.5-flash"}
     ])
 
-    # 💎 第二梯隊 (中型速度款)
+    # 💎 第二梯隊 (中型速度款 - ✨ 注入全新開源神模 Gemma 3 27B)
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"}) # 🆕 Gemma 3 27B 頂級中堅！
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"})
-    
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-32b-instruct:free"})
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "mistralai/mixtral-8x7b-instruct:free"})
 
-    # ⚡ 第三與第四梯隊 (極速與輕量款)
-    for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "meta-llama/llama-4-scout-17b-16e-instruct"})
+    # ⚡ 第三與第四梯隊 (極速與輕量款防線 - ✨ 全面換裝最新 DeepSeek 與保底自動 Router)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
-    
     for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-2-9b-it:free"})
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3-8b-instruct:free"})
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) # 🆕 DeepSeek V3 免費版
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"}) # 🆕 最終防線：免費路由自動分流
 
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
@@ -661,18 +659,15 @@ async def fetch_ai_response(messages, require_vision=False):
         is_vision_model = item.get("vision", False)
         target_client = item.get("client")
         
-        # 🌟 【⚡ 即時雙重檢查防禦機制】 🌟
         loop_now = time.time()
         if provider == "groq" and target_client:
             k_idx = 10 - GROQ_CLIENTS.index(target_client)
             if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]:
-                # 剛剛前一個模型才剛讓這把鑰匙入獄，後面排隊的模型直接跳過！
                 continue
         
         if provider == "openrouter":
             or_idx = item.get("key_idx")
             if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]:
-                # 這把 OpenRouter 金鑰已經在監獄裡，直接跳過同請求裡面的其他 OpenRouter 模型
                 continue
 
         if require_vision and not is_vision_model: continue  
@@ -730,7 +725,6 @@ async def fetch_ai_response(messages, require_vision=False):
             error_msg = str(e)
             print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
-            # 🎯 Groq 429 監獄處理
             if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_index = 10 - GROQ_CLIENTS.index(target_client)
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
@@ -750,7 +744,6 @@ async def fetch_ai_response(messages, require_vision=False):
                 else:
                     print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds:.1f} 秒。")
 
-            # 🎯 OpenRouter 429 監獄處理
             elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_idx = item.get("key_idx")
                 cooldown_sec = 60  
@@ -760,6 +753,71 @@ async def fetch_ai_response(messages, require_vision=False):
             continue 
 
     return "（揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
+
+
+# ────────────────────────────────────────────────────────
+# 5.1 ⚙️ 後台決策核心 (✨ 純免費小模型分工版 - 絕不佔用一線大腦額度)
+# ────────────────────────────────────────────────────────
+async def fetch_background_decision(messages):
+    """專門負責後台『旁聽判定』或『大批資料處理』，僅調用 OpenRouter 的純免費小模型池"""
+    global current_or_idx, OPENROUTER_KEY_COOLDOWNS
+    current_time = time.time()
+    
+    # 動態過濾 OpenRouter 監獄
+    available_or_keys = []
+    for i, key in enumerate(OPENROUTER_KEYS):
+        if i in OPENROUTER_KEY_COOLDOWNS:
+            if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
+                print(f"【🟢 出獄通知(後台)】第 {i+1} 組 OpenRouter 金鑰解鎖，加入後台運算。")
+                del OPENROUTER_KEY_COOLDOWNS[i]
+                if key: available_or_keys.append((i, key))
+        else:
+            if key: available_or_keys.append((i, key))
+
+    if available_or_keys:
+        start_or_idx = current_or_idx % len(available_or_keys)
+        current_or_idx = (current_or_idx + 1) % len(available_or_keys)
+        ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
+    else:
+        ordered_or_keys = []
+
+    # 🛠️ 建立 100% 免費後台模型矩陣池
+    BACKGROUND_POOLS = []
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
+    for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"key_idx": idx, "key": key, "model": "openrouter/free"})
+
+    for item in BACKGROUND_POOLS:
+        model_name = item["model"]
+        target_key = item["key"]
+        key_idx = item["key_idx"]
+        
+        if key_idx in OPENROUTER_KEY_COOLDOWNS and time.time() < OPENROUTER_KEY_COOLDOWNS[key_idx]:
+            continue
+            
+        try:
+            print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data["choices"][0]["message"]["content"]
+                    else:
+                        error_text = await resp.text()
+                        raise Exception(f"HTTP {resp.status}: {error_text}")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"【⚠️ 後台切換】{model_name} 發生錯誤，正滑動至下一組...")
+            if "429" in error_msg or "rate limit" in error_msg.lower():
+                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + 60
+                print(f"【🛑 封印金鑰(後台)】第 {key_idx+1} 組 OpenRouter 觸發上限，封印 60 秒。")
+            continue
+
+    return "沉默" # 萬一後台全垮，保底選擇潛水保持沉默
+
 
 # ────────────────────────────────────────────────────────
 # 🌐 網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
@@ -796,19 +854,13 @@ async def search_internet_meme(query, is_explicit=True):
     
     # 根據判定模式，決定本次的主力鑰匙，並推進全域指標
     if is_explicit:
-        # 即時查：取得目前指標，然後指標減 1 (若小於 0 則循環回到最後一把)
         start_idx = current_explicit_idx
         current_explicit_idx = (current_explicit_idx - 1) % total_keys
-        
-        # 建立嘗試清單 (例如從 9 開始往下: 9, 8, 7...0)
         indices = [(start_idx - i) % total_keys for i in range(total_keys)]
         mode_name = "即時模式 (平均輪詢 ↩️)"
     else:
-        # 背景查：取得目前指標，然後指標加 1 (若大於總數則循環回到第 0 把)
         start_idx = current_background_idx
         current_background_idx = (current_background_idx + 1) % total_keys
-        
-        # 建立嘗試清單 (例如從 0 開始往上: 0, 1, 2...9)
         indices = [(start_idx + i) % total_keys for i in range(total_keys)]
         mode_name = "背景模式 (平均輪詢 ↪️)"
 
