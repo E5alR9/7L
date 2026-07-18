@@ -199,8 +199,7 @@ async def save_to_long_term_memory(channel_id, history):
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
             
-        except Exception as e:
-            print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
+
 
 async def update_daily_diary(channel_id, recent_chat):
     """🧠 每日核心日記系統：自動去重、高強度濃縮，以 YYYY-MM-DD 為 ID 寫入雲端日記"""
@@ -816,14 +815,22 @@ async def on_message(message):
                     
                     if second_reply:
                         match2 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", second_reply, re.IGNORECASE)
-                        if match2:
-                            new_nickname2 = match2.group(1).strip()
-                            if new_nickname2 and new_nickname2 != current_custom_name:
+                        imp_match2 = re.search(r"\|\|NEW_IMPRESSION:\s*([\s\S]*?)\s*\|\|", second_reply, re.IGNORECASE)
+                        
+                        new_nickname2 = match2.group(1).strip() if match2 else None
+                        new_impression2 = imp_match2.group(1).strip() if imp_match2 else None
+                        
+                        if new_nickname2 or new_impression2:
+                            final_name2 = new_nickname2 if new_nickname2 and new_nickname2 != current_custom_name else None
+                            final_imp2 = new_impression2 if new_impression2 and new_impression2 != current_impression else None
+                            
+                            if final_name2 or final_imp2:
                                 await save_user_profile(
                                     user_id=user_id,
                                     username=message.author.name,
                                     display_name=message.author.display_name,
-                                    custom_name=new_nickname2
+                                    custom_name=final_name2,
+                                    impression=final_imp2
                                 )
                         
                         # 🚨【核心安全鎖】背景開智輸出前，全面雙重抹除所有標籤，絕不穿幫
