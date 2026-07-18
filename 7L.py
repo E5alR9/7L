@@ -592,9 +592,19 @@ async def on_message(message):
         # 只要有任何「真人」發話，立刻重置計數器，讓機器人下次還能與其他機器人正常聊天
         BOT_INTERACTION_COUNTS[channel_id] = 0
 
+    # 🔍 【鷹眼解析機制】檢查這則訊息是不是「回覆」別人的訊息
+    reply_context = ""
+    current_user_text = message.content
+    if message.reference and isinstance(message.reference.resolved, discord.Message):
+        replied_msg = message.reference.resolved
+        # 把對方原本講的話，偷偷塞進上下文裡，讓 7L 擁有上帝視角！
+        reply_context = f"【偷偷告訴 7L：使用者現在正在回覆 {replied_msg.author.display_name} 的這句話：「{replied_msg.content}」】\n"
+        current_user_text = reply_context + current_user_text
+
+    # ✨ 【結合選擇性記憶】把當下的對話 (包含回覆上下文) 傳入，決定要不要喚醒深層日記
     if channel_id not in HIPPOCAMPUS_CACHE:
         print(f"【🧠 海馬回】冷啟動，從雲端長存記憶區下載頻道 {channel_id} 的回憶...")
-        HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id)
+        HIPPOCAMPUS_CACHE[channel_id] = await fetch_from_long_term_memory(channel_id, current_user_text)
         
     history = HIPPOCAMPUS_CACHE[channel_id]
 
@@ -607,9 +617,11 @@ async def on_message(message):
     if bot.user in message.mentions:
         should_trigger = True
         user_prompt = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        user_prompt = reply_context + user_prompt  # 🎯 加上鷹眼上下文
     elif is_reply_to_bot:
         should_trigger = True
         user_prompt = message.content.strip()
+        user_prompt = reply_context + user_prompt  # 🎯 加上鷹眼上下文
 
     # 🚀 核心優化 3：如果發話者是機器人，但「沒有標記/沒有回覆7L」（只是發公告或通知），直接 return 裝死，不參與旁聽與建檔
     if message.author.bot and not should_trigger:
@@ -731,7 +743,6 @@ async def on_message(message):
                         img_bytes = await attachment.read()
                         base64_img = base64.b64encode(img_bytes).decode('utf-8')
                         
-                        # 如果手機上傳導致 c_type 為空，給一個安全預設值防止 API 閃退
                         final_ctype = c_type if "image" in c_type else "image/png"
                         
                         content_payload.append({
@@ -915,10 +926,10 @@ async def on_message(message):
 
     # ── 情況 B：純文字群聊旁聽（🧠 由後台免費小模型進行判定分工） ──
     else:
-        if message.content.strip():
+        if message.content.strip() or reply_context:
             formatted_bypass = (
                 f"【群聊旁聽】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
-                f"訊息內容：「{message.content.strip()}」"
+                f"訊息內容：「{reply_context}{message.content.strip()}」" # 🎯 旁聽時也加上鷹眼上下文
             )
             history.append({"role": "user", "content": formatted_bypass})
             if len(history) > 50: history = history[-50:]
