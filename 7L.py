@@ -159,6 +159,7 @@ async def extract_video_frames(attachment, max_frames=4):
         print(f"【⚠️ 影片解析失敗】: {e}")
         return []
 
+
 # ────────────────────────────────────────────────────────
 # 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
 # ────────────────────────────────────────────────────────
@@ -333,7 +334,65 @@ async def auto_chat_loop():
         await channel.send(bot_reply, allowed_mentions=smart_mentions)
 
 # ────────────────────────────────────────────────────────
-# 4. 💬 訊息處理核心 (✨ 新分工理念雙軌優化版)
+# 4. 👥 人物記憶大腦核心 (User Profile Memory)
+# ────────────────────────────────────────────────────────
+USER_MEMORY_CACHE = {}  # 記憶快取，避免每次說話都去抓雲端導致機器人卡頓
+
+async def get_user_profile(user_id: int, user_obj=None):
+    """獲取使用者的人物記憶資料（自動調閱 Firebase 或快取）"""
+    uid_str = str(user_id)
+    if uid_str in USER_MEMORY_CACHE:
+        return USER_MEMORY_CACHE[uid_str]
+    
+    try:
+        # 💡 自動對接妳前面初始化好的 db 物件，建立 user_memory 集合
+        doc_ref = db.collection("user_memory").document(uid_str)
+        loop = asyncio.get_event_loop()
+        doc = await loop.run_in_executor(None, doc_ref.get)
+        
+        if doc.exists:
+            data = doc.to_dict()
+            USER_MEMORY_CACHE[uid_str] = data
+            return data
+    except Exception as e:
+        print(f"【⚠️ Firebase 錯誤】讀取人物記憶失敗: {e}")
+        
+    # 如果是第一次見面（資料庫沒資料），建立一組預設檔案
+    default_profile = {
+        "user_id": user_id,
+        "username": user_obj.name if user_obj else "未知使用者",
+        "display_name": user_obj.display_name if user_obj else "未知姓名",
+        "custom_name": "",  # 專屬稱呼名字，預設為空
+        "last_seen": time.time()
+    }
+    return default_profile
+
+async def save_user_profile(user_id: int, username: str, display_name: str, custom_name: str = None):
+    """儲存或更新使用者的人物記憶至雲端"""
+    uid_str = str(user_id)
+    profile = await get_user_profile(user_id)
+    
+    # 更新最新資訊
+    profile["username"] = username
+    profile["display_name"] = display_name
+    if custom_name is not None:
+        profile["custom_name"] = custom_name  # 修改稱呼
+    profile["last_seen"] = time.time()
+    
+    # 同步到快取與 Firebase
+    USER_MEMORY_CACHE[uid_str] = profile
+    try:
+        doc_ref = db.collection("user_memory").document(uid_str)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: doc_ref.set(profile, merge=True))
+        print(f"【💾 人物記憶鞏固】已成功儲存 {display_name} 的大腦檔案。")
+    except Exception as e:
+        print(f"【⚠️ Firebase 錯誤】儲存人物記憶失敗: {e}")
+
+
+
+# ────────────────────────────────────────────────────────
+# 5. 💬 訊息處理核心 (✨ 人物記憶感知雙軌優化版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -364,6 +423,24 @@ async def on_message(message):
     user_nick = message.author.display_name
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
+
+    # ─── 👥 【全新融入】自動讀取與動態更新對話者的人物記憶 ───
+    user_profile = await get_user_profile(message.author.id, message.author)
+    if user_profile["display_name"] != message.author.display_name:
+        await save_user_profile(message.author.id, message.author.name, message.author.display_name)
+    
+    # 決定 7L 該怎麼稱呼這個人（優先使用專屬稱呼，沒有就用原暱稱）
+    called_name = user_profile["custom_name"] if user_profile["custom_name"] else message.author.display_name
+
+    # 💡 建立身分提示小紙條，動態塞入大腦系統設定中
+    identity_note = (
+        f"\n[目前對話者資訊]\n"
+        f"- 帳號名稱: {message.author.name}\n"
+        f"- 伺服器暱稱: {message.author.display_name}\n"
+        f"- 妳對他的專屬稱呼名字: {called_name}\n"
+        f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n"
+    )
+    dynamic_system_setting = SYSTEM_SETTING + identity_note
 
     # ── 情況 A：有人標記或回覆 Bot（前台主力聊天，直接調用大腦） ──
     if should_trigger:
@@ -425,7 +502,8 @@ async def on_message(message):
             immediate_user_msg = {"role": "user", "content": formatted_prompt}
             history_user_msg = {"role": "user", "content": formatted_prompt}
 
-        messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [immediate_user_msg]
+        # 💡 使用動態注入了人物記憶的 dynamic_system_setting
+        messages = [{"role": "system", "content": dynamic_system_setting}] + history + [immediate_user_msg]
         
         # 取得第一句回覆
         bot_reply = await fetch_ai_response(messages, require_vision=has_media)
@@ -481,7 +559,8 @@ async def on_message(message):
                             f"字數限制在 1~2 句話之內，絕對禁止出現括號或後台提示字眼！"
                         )
                         
-                    second_messages = [{"role": "system", "content": SYSTEM_SETTING}] + current_history + [{"role": "user", "content": follow_up_prompt}]
+                    # 💡 背景補救也同步套用動態認人設定
+                    second_messages = [{"role": "system", "content": dynamic_system_setting}] + current_history + [{"role": "user", "content": follow_up_prompt}]
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
@@ -525,18 +604,19 @@ async def on_message(message):
             # 放進背景執行，絕不拖慢正常群聊速度
             async def process_autonomous_reply():
                 try:
-                    # 1. 🥇 呼叫專門的後台小模型池進行「極速二分法」篩選，不浪費 Groq 額度
+                    # 1. 🥇 呼叫專門的後台小模型池進行「極速二分法」篩選
                     decision = await fetch_background_decision(interject_messages)
                     
-                    # 2. 只有在小模型判定「有衝動要插話」時，才喚醒一線的 Groq/Gemini 大模型
+                    # 2. 只有在小模型判定「有衝動要插話」時，才喚醒前台大模型
                     if decision and "插話" in decision:
                         print(f"【💬 自主意識】後台判定有插話衝動！正式移交前台主力大腦生成台詞...")
                         
                         chat_prompt = (
                             f"【自主意識爆發】妳剛剛在旁聽群聊時，覺得非常有衝動想要插話吐槽或回應！\n"
-                            f"請根據妳傲嬌的性格，直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+                            f"請根據妳傲嬌的性格，直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出 any 系統格式、括號或後台提示字眼！"
                         )
-                        actual_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": chat_prompt}]
+                        # 💡 隨機插話時也同樣讓她認得當前發言的人是誰
+                        actual_messages = [{"role": "system", "content": dynamic_system_setting}] + history + [{"role": "user", "content": chat_prompt}]
                         
                         bot_reply = await fetch_ai_response(actual_messages)
                         
@@ -820,7 +900,7 @@ async def fetch_background_decision(messages):
 
 
 # ────────────────────────────────────────────────────────
-# 🌐 網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
+# 6.🌐網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
 # ────────────────────────────────────────────────────────
 async def fetch_tavily_single(query, api_key):
     """執行單一 Tavily API 請求"""
@@ -885,32 +965,16 @@ async def search_internet_meme(query, is_explicit=True):
     return "網路訊號不佳，Tavily 金鑰矩陣已全面癱瘓。"
 
 # ────────────────────────────────────────────────────────
-# 🌐 6. 虛擬網頁與啟動區塊
+# 7. 🛠️ 互動指令集 (包含健康矩陣與人物記憶指令)
 # ────────────────────────────────────────────────────────
-class DummyServer(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-        self.wfile.write(b"All Bots are alive!")
 
-    def log_message(self, format, *args): return
-
-def run_backup_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), DummyServer)
-    server.serve_forever()
-
-
-# ────────────────────────────────────────────────────────
-# 📊 ✨ 新增：金鑰即時健康檢查指令 (完美融合 7L 監獄與輪詢系統)
-# ────────────────────────────────────────────────────────
+# --- 📊 API 金鑰即時健康檢查矩陣 ---
 @bot.command(name="api")
 @commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
-    # 讀取妳在 7L (6).py 最上方設定好的 10 組 Groq 金鑰
+    # 讀取妳在最上方設定好的 10 組 Groq 金鑰
     groq_keys = [
         GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3, GROQ_API_KEY_4, GROQ_API_KEY_5,
         GROQ_API_KEY_6, GROQ_API_KEY_7, GROQ_API_KEY_8, GROQ_API_KEY_9, GROQ_API_KEY_10
@@ -1026,6 +1090,66 @@ async def check_all_apis(ctx):
         report.append("```")
         
         await msg.edit(content="\n".join(report))
+
+# --- 🔮 手動修改或設定人物稱呼指令 ---
+@bot.command(name="記住")
+@commands.is_owner()  # ✨ 限制只有身為創作者的妳能強制修改別人的稱呼
+async def remember_user(ctx, member: discord.Member, *, nickname: str):
+    """【擁有者專用】手動修改或設定某個人的專屬稱呼名字"""
+    await save_user_profile(
+        user_id=member.id,
+        username=member.name,
+        display_name=member.display_name,
+        custom_name=nickname
+    )
+    await ctx.send(f"🔮 **【記憶鞏固】** 好喔！7L 已經在 Firebase 建立大腦檔案。以後看到 **{member.display_name}**，我內心都會叫他 **『{nickname}』** 囉！")
+
+# --- 🔍 讓使用者查詢自己雲端大腦記憶檔案的指令 ---
+@bot.command(name="我是誰")
+async def who_am_i(ctx):
+    """讓使用者查詢 7L 目前對他的大腦記憶檔案"""
+    profile = await get_user_profile(ctx.author.id, ctx.author)
+    c_name = profile.get("custom_name", "")
+    
+    report = [
+        "🔍 **【 7L 的雲端人物記憶檔案 】**",
+        "```yaml",
+        f"使用者唯一 ID : {ctx.author.id}",
+        f"Discord 帳號  : {profile['username']}",
+        f"當前伺服器暱稱 : {profile['display_name']}",
+        f"7L 對妳的稱呼  : {c_name if c_name else '（尚無專屬稱呼，目前跟著伺服器暱稱叫）'}",
+        "```"
+    ]
+    await ctx.send("\n".join(report))
+
+
+# ────────────────────────────────────────────────────────
+# 8. 🌐 虛擬網頁與啟動區塊
+# ────────────────────────────────────────────────────────
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"All Bots are alive!")
+
+    def log_message(self, format, *args): return
+
+def run_backup_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), DummyServer)
+    server.serve_forever()
+
+if __name__ == "__main__":
+    server_thread = threading.Thread(target=run_backup_server)
+    server_thread.daemon = True
+    server_thread.start()
+    print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動！")
+
+    if DISCORD_TOKEN:
+        bot.run(DISCORD_TOKEN)
+    else:
+        print("【錯誤】找不到 DISCORD_TOKEN_7L，請確認環境變數是否設定正確！")
 
 
 # ────────────────────────────────────────────────────────
