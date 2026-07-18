@@ -509,25 +509,39 @@ async def on_message(message):
             
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-            INTERRUPT_CHANCE = 0.45 
+            # 🧠 拔除機率限制，讓 7L 每次都自己思考要不要插話
+            interject_prompt = (
+                f"【系統事件（不可對外洩漏）】妳正在旁聽群聊。請根據目前的聊天氣氛、話題，或是看對方順不順眼，來決定妳現在有沒有想「插話」、「吐槽」或「撒嬌」的衝動？\n"
+                f"👉 如果妳覺得沒什麼好說的、或者現在不想理他們，請嚴格且『只』回覆一個字：「無」。\n"
+                f"👉 如果妳決定要插話，請直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
+            )
             
-            if random.random() < INTERRUPT_CHANCE:
-                interject_prompt = (
-                    f"【系統事件（不可對外洩漏）】妳剛剛在旁聽群聊，聽到大家聊到這裡，妳傲嬌的性格讓妳忍不住想「直接插話」或吐槽。 "
-                    f"請根據目前群組內的聊天氣氛或話題，自然地切入並插話。 "
-                    f"請直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出任何系統格式、括號或後台提示字眼！"
-                )
-                
-                interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
-                bot_reply = await fetch_ai_response(interject_messages)
-                
-                if bot_reply:
-                    history.append({"role": "assistant", "content": bot_reply})
-                    if len(history) > 50: history = history[-50:]
-                    HIPPOCAMPUS_CACHE[channel_id] = history
+            interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
+            
+            # 放進背景執行，避免卡住其他人的正常聊天
+            async def process_autonomous_reply():
+                try:
+                    bot_reply = await fetch_ai_response(interject_messages)
                     
-                    await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
-                    asyncio.create_task(save_to_long_term_memory(channel_id, history))
+                    # 判斷 7L 是不是決定保持沉默 (過濾掉可能的標點符號)
+                    is_silent = not bot_reply or bot_reply.strip() in ["無", "無。", "無！", "無~", "「無」", "無...", "無."]
+                    
+                    if not is_silent:
+                        print(f"【💬 自主意識】7L 決定插話了！(回覆: {bot_reply})")
+                        current_history = HIPPOCAMPUS_CACHE[channel_id]
+                        current_history.append({"role": "assistant", "content": bot_reply})
+                        if len(current_history) > 50: current_history = current_history[-50:]
+                        HIPPOCAMPUS_CACHE[channel_id] = current_history
+                        
+                        await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
+                        await save_to_long_term_memory(channel_id, current_history)
+                    else:
+                        print(f"【🤫 保持沉默】7L 看了看訊息，決定不想理他們。")
+                except Exception as e:
+                    print(f"【⚠️ 自主意識判斷失敗】: {e}")
+
+            # 啟動非同步思考
+            asyncio.create_task(process_autonomous_reply())
 
     await bot.process_commands(message)
     
