@@ -88,29 +88,60 @@ else:
 
 
 # ────────────────────────────────────────────────────────
-# 💾 雲端長存記憶（Firebase 讀寫函式）
+# 💾 雲端長存記憶（Firebase 先掃瞄再下載架構）
 # ────────────────────────────────────────────────────────
 async def fetch_from_long_term_memory(channel_id):
     if db is not None:
         try:
+            # 1. 🔍 先只掃描「目錄/標籤」層 (極輕量，不含對話原文)
+            meta_ref = db.collection("channel_meta").document(str(channel_id))
+            meta_doc = await meta_ref.get()
+            
+            history = []
+            if meta_doc.exists:
+                meta_data = meta_doc.to_dict()
+                summary_tags = meta_data.get("summary_tags", "")
+                
+                # 如果有標籤，就把它當成潛意識塞入
+                if summary_tags:
+                    history.append({"role": "system", "content": f"【長存記憶標籤】：{summary_tags}"})
+            
+            # 2. 📥 決定要不要下載「完整對話」層
+            # 正常情況下，我們還是需要最近的幾句話來接續對話。
+            # (如果未來要實作更進階的 AI 語意比對，可以在這裡加入判斷邏輯，
+            # 例如：比對 summary_tags 決定要不要去抓特定的舊對話)
+            
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
-                return data.get("history", [])
+                raw_history = data.get("history", [])
+                history.extend(raw_history)
+                
+            return history
         except Exception as e:
             print(f"【⚠️ 讀取失敗】無法自雲端讀取頻道 {channel_id} 的長存記憶: {e}")
     return []
 
 async def save_to_long_term_memory(channel_id, history):
-    if len(history) > 50:
-        history = history[-50:]
+    # 限制上傳的對話長度，避免無止盡膨脹 (維持最近的 15 筆)
+    raw_history_limit = 15
+    clean_history = [msg for msg in history if not (msg.get("role") == "system" and "【長存記憶標籤】" in msg.get("content", ""))]
+    
+    if len(clean_history) > raw_history_limit:
+        clean_history = clean_history[-raw_history_limit:]
         
     if db is not None:
         try:
+            # 1. 儲存完整對話到 history 集合
             doc_ref = db.collection("channel_history").document(str(channel_id))
-            await doc_ref.set({"history": history}, merge=True)
-            print(f"【💾 記憶鞏固】頻道 {channel_id} 的記憶已成功同步至 Firebase 雲端長存區。")
+            await doc_ref.set({"history": clean_history, "last_updated": time.time()}, merge=True)
+            
+            # 2. (預留) 這裡未來可以呼叫 AI 幫忙生 tags，然後存到 meta 集合
+            # meta_ref = db.collection("channel_meta").document(str(channel_id))
+            # await meta_ref.set({"summary_tags": "預留的 AI 產生標籤"}, merge=True)
+            
+            print(f"【💾 記憶鞏固】頻道 {channel_id} 的短期記憶已同步至雲端。")
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
 
