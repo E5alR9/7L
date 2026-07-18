@@ -195,7 +195,16 @@ def extract_text_from_content(content):
 async def save_to_long_term_memory(channel_id, history):
     # 限制上傳的對話長度，避免無止盡膨脹 (維持最近的 15 筆)
     raw_history_limit = 15
-    clean_history = [msg for msg in history if not (msg.get("role") == "system" and "【長存記憶標籤】" in msg.get("content", ""))]
+    
+    # 🎯 修正後的精準過濾邏輯：徹底移除所有暫時性系統提示標籤，防止雲端記憶爆炸
+    clean_history = [
+        msg for msg in history 
+        if not (msg.get("role") == "system" and (
+            "【長存記憶標籤】" in msg.get("content", "") or
+            "【潛意識核心記憶標籤】" in msg.get("content", "") or 
+            "【妳被喚醒的今日核心記憶】" in msg.get("content", "")
+        ))
+    ]
     
     if len(clean_history) > raw_history_limit:
         clean_history = clean_history[-raw_history_limit:]
@@ -210,7 +219,7 @@ async def save_to_long_term_memory(channel_id, history):
             # 2. 🧠 背景開智：自動生成對話摘要標籤 (不阻塞主流程)
             async def generate_and_save_tags(cid, recent_chat):
                 try:
-                    # ✨ 修正：支援多模態文字提取，防止圖片對話被丟棄
+                    # ✨ 支援多模態文字提取，防止圖片對話被丟棄
                     chat_text = "\n".join([f"{msg['role']}: {extract_text_from_content(msg['content'])}" for msg in recent_chat if extract_text_from_content(msg['content']).strip()])
                     
                     if len(chat_text.strip()) < 20: 
@@ -225,7 +234,7 @@ async def save_to_long_term_memory(channel_id, history):
                     
                     messages = [{"role": "user", "content": summary_prompt}]
                     
-                    # 💡 呼叫我們剛剛做好的「後台雙軌備援模型池」來做苦工
+                    # 💡 呼叫「後台雙軌備援模型池」來做苦工
                     summary_tags = await fetch_background_decision(messages)
                     
                     # 確保回傳的不是錯誤或沉默
@@ -1438,8 +1447,8 @@ async def fetch_ai_response(messages, require_vision=False):
     EMERGENCY_SMALL_MODEL = "llama-3.1-8b-instant"
     
     # ⚡ 直接穿透！輪詢註冊的 Groq 客戶端陣列
-    if valid_groq_clients:
-        for idx, client in enumerate(valid_groq_clients, start=1):
+   if GROQ_CLIENTS:
+    for idx, client in enumerate(GROQ_CLIENTS, start=1):
             if client is None:
                 continue
             try:
@@ -1517,7 +1526,7 @@ async def search_internet_meme(query, is_explicit=True):
         
         try:
             result = await fetch_tavily_single(query, key)
-            if result:
+            if result:                                        # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 print(f"  ✨ 【探針成功】第 [{idx + 1}] 組金鑰順利完成任務！")
                 return result
         except RuntimeError:
@@ -1526,7 +1535,6 @@ async def search_internet_meme(query, is_explicit=True):
             print(f"  ⚠️ 第 [{idx + 1}] 組金鑰發生異常: {e}，跳過並嘗試下一組...")
 
     return "網路訊號不佳，Tavily 金鑰矩陣已全面癱瘓。"
-                                        # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # ────────────────────────────────────────────────────────
 # 9. 🛠️ 互動指令集 (包含動態健康矩陣與人物記憶指令)
 # ────────────────────────────────────────────────────────
