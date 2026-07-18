@@ -1870,7 +1870,7 @@ async def stop(ctx):
     print(f"【🛑 核心指令】持有者 {ctx.author} 觸發了安全關閉指令！")
     
     # 發送最後的告別訊息（可自由修改妳的傲嬌語氣）
-    await ctx.send("💤 嘖……知道了啦。那本小姐就先去睡了，沒事別隨便吵醒我……（安全下線中）")
+    await ctx.send("💤 嘖……知道了啦。那本小姐就先去睡了，沒事別隨便吵醒我……")
     
     # 關閉與 Discord 網關的連線
     await bot.close()
