@@ -516,9 +516,7 @@ async def on_message(message):
 
     called_name = current_custom_name
 
-    # 1💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
-    # 2💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
-    # 3💡 建立身分提示與【三重潛意識隱藏任務】，動態塞入大腦系統設定中  ... 這裡改了三次
+    # 💡 建立身分提示與【雙重潛意識隱藏任務】，動態塞入大腦系統設定中
     identity_note = (
         f"\n[目前對話者資訊]\n"
         f"- 帳號名稱: {message.author.name}\n"
@@ -538,7 +536,7 @@ async def on_message(message):
         f"為了模擬現實人類在 Discord 上熱絡聊天時『連續傳送多條訊息』的真實感，如果你在回覆完第一句話後，內心『強烈渴望』想要主動追加補述、吐槽、撒嬌或轉換話題，請在妳的回覆最末端加上隱藏標籤 `||CONTINUE_MESSAGE:妳強烈想連發的第二句話內容||`。\n"
         f"⚠️ 嚴格執行守則：\n"
         f"1. 只有在妳靈魂深處真的想連發時才使用。如果覺得講完一句就夠了，就『絕對不要』加上這個標籤！\n"
-        f"2. 連發內容嚴格限制在 1 句話之內，且絕對禁止使用任何換行符號（Enter）。\n"
+        f"2. 連發內容嚴格限制在 1 句話之內，且絕對禁止使用 any 換行符號（Enter）。\n"
         f"3. (特別注意：此連發任務僅在與人類『真人』對話時適用，如果對方是機器人，請絕對不要使用連發標籤！)\n\n"
         
         f"【🎨 Discord 特效技能：傲嬌層次語法（黑條與刪除線）】\n"
@@ -572,7 +570,7 @@ async def on_message(message):
         search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下"]
         
         if user_prompt.strip() and any(kw in user_prompt for kw in search_keywords):
-            print(f"【🌐 即時探針】聽到搜尋指令！7L 正在調查：{user_prompt}")
+            print(f"【🌐 即時探針】heard 搜尋指令！7L 正在調查：{user_prompt}")
             search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
             is_explicit_search = True
 
@@ -587,14 +585,23 @@ async def on_message(message):
         
         if message.attachments:
             for attachment in message.attachments:
-                c_type = attachment.content_type or ""
-                if any(t in c_type for t in ["image/png", "image/jpeg", "image/webp", "image/gif"]):
+                c_type = (attachment.content_type or "").lower()
+                filename = attachment.filename.lower()
+                
+                # 📸 🧬【升級核心邏輯】相容性大解放：只要類型包含 image 或是常見圖片副檔名結尾，就直接放行！
+                is_image = "image" in c_type or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"])
+                
+                if is_image:
                     try:
                         img_bytes = await attachment.read()
                         base64_img = base64.b64encode(img_bytes).decode('utf-8')
+                        
+                        # 如果手機上傳導致 c_type 為空，給一個安全預設值防止 API 閃退
+                        final_ctype = c_type if "image" in c_type else "image/png"
+                        
                         content_payload.append({
                             "type": "image_url",
-                            "image_url": {"url": f"data:{c_type};base64,{base64_img}"}
+                            "image_url": {"url": f"data:{final_ctype};base64,{base64_img}"}
                         })
                         has_media = True
                     except Exception as e:
@@ -814,6 +821,9 @@ async def on_message(message):
     await bot.process_commands(message)
     
 
+# ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ────────────────────────────────────────────────────────
 # 5. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OpenRouter + Groq 雙軌完全體）
 # ────────────────────────────────────────────────────────
