@@ -1099,9 +1099,9 @@ async def search_internet_meme(query, is_explicit=True):
 # 9. 🛠️ 互動指令集 (包含動態健康矩陣與人物記憶指令)
 # ────────────────────────────────────────────────────────
 
-# --- 📊 API 金鑰即時健康檢查矩陣 ---
+# ─── 📊 API 金鑰即時健康檢查矩陣（完全體同步版） ───
 @bot.command(name="api")
-# @commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
+# @commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
@@ -1139,12 +1139,12 @@ async def check_all_apis(ctx):
     # 2. 偵測 OpenRouter 狀態與內部監獄狀況
     async def check_openrouter(session, key, index):
         if not key: 
-            return f"OpenRouter-{index}", "⚪ 未設定", "-"
+            return f"OpenRouter-{index:02d}", "⚪ 未設定", "-"
             
         if (index - 1) in OPENROUTER_KEY_COOLDOWNS:
             rem = OPENROUTER_KEY_COOLDOWNS[index - 1] - current_time
             if rem > 0:
-                return f"OpenRouter-{index}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                return f"OpenRouter-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
                 
         url = "https://openrouter.ai/api/v1/key"
         headers = {"Authorization": f"Bearer {key}"}
@@ -1154,46 +1154,52 @@ async def check_all_apis(ctx):
                     data = await resp.json()
                     rem_usd = data.get("data", {}).get("limit_remaining")
                     rem_str = f"剩餘: {rem_usd:.4f} USD" if rem_usd is not None else "額度正常"
-                    return f"OpenRouter-{index}", "🟢 200 OK", rem_str
+                    return f"OpenRouter-{index:02d}", "🟢 200 OK", rem_str
                 elif resp.status == 429: 
-                    return f"OpenRouter-{index}", "🛑 429 限流", "頻率過高"
+                    return f"OpenRouter-{index:02d}", "🛑 429 限流", "頻率過高"
                 else: 
-                    return f"OpenRouter-{index}", f"❌ {resp.status} 錯誤", ""
+                    return f"OpenRouter-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return f"OpenRouter-{index}", "💥 連線異常", "Timeout/網路失敗"
+            return f"OpenRouter-{index:02d}", "💥 連線異常", "Timeout/網路失敗"
 
     # 3. 偵測 Tavily 狀態
     async def check_tavily(session, key, index):
         if not key: 
-            return f"Tavily-{index}", "⚪ 未設定", "-"
+            return f"Tavily-{index:02d}", "⚪ 未設定", "-"
         url = "https://api.tavily.com/search"
         payload = {"api_key": key, "query": "ping", "max_results": 1}
         try:
             async with session.post(url, json=payload, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Tavily-{index}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                    return f"Tavily-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
                 elif resp.status in [429, 403]: 
-                    return f"Tavily-{index}", "🛑 429/403 滿", "免費額度耗盡"
+                    return f"Tavily-{index:02d}", "🛑 429/403 滿", "免費額度耗盡"
                 else: 
-                    return f"Tavily-{index}", f"❌ {resp.status} 錯誤", ""
+                    return f"Tavily-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return f"Tavily-{index}", "💥 連線異常", "Timeout/網路失敗"
+            return f"Tavily-{index:02d}", "💥 連線異常", "Timeout/網路失敗"
 
-    # 4. 偵測 Gemini 狀態
-    async def check_gemini(session, key):
+    # 4. 偵測 Gemini 狀態與內部監獄狀況 (✨ 全面升級多金鑰排查)
+    async def check_gemini(session, key, index):
         if not key: 
-            return "Gemini-1", "⚪ 未設定", "-"
+            return f"Gemini-{index:02d}", "⚪ 未設定", "-"
+            
+        if (index - 1) in GEMINI_KEY_COOLDOWNS:
+            rem = GEMINI_KEY_COOLDOWNS[index - 1] - current_time
+            if rem > 0:
+                return f"Gemini-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
         try:
             async with session.get(url, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return "Gemini-1", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                    return f"Gemini-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
-                    return "Gemini-1", "🛑 429 限流", "請稍候再試"
+                    return f"Gemini-{index:02d}", "🛑 429 限流", "請稍候再試"
                 else: 
-                    return "Gemini-1", f"❌ {resp.status} 錯誤", ""
+                    return f"Gemini-{index:02d}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return "Gemini-1", "💥 連線異常", "Timeout/網路失敗"
+            return f"Gemini-{index:02d}", "💥 連線異常", "Timeout/網路失敗"
 
     # 併發非同步發送所有盲測請求
     async with aiohttp.ClientSession() as session:
@@ -1204,7 +1210,9 @@ async def check_all_apis(ctx):
             tasks.append(check_openrouter(session, key, idx))
         for idx, key in enumerate(TAVILY_KEYS, 1):
             tasks.append(check_tavily(session, key, idx))
-        tasks.append(check_gemini(session, GEMINI_API_KEY))
+        # 💡 修正：改成迴圈掃描所有 Gemini 金鑰，不再只孤零零戳第一把
+        for idx, key in enumerate(GEMINI_KEYS, 1):
+            tasks.append(check_gemini(session, key, idx))
         
         try:
             # ✨ 大絕招：給整個併發探測加上「絕對斬斷鎖」（8 秒後強制放棄，絕不卡死）
@@ -1214,8 +1222,8 @@ async def check_all_apis(ctx):
             categories = {
                 "Groq": [],
                 "OpenRouter": [],
-                "Tavily": [],
-                "Gemini": []
+                "Gemini": [],
+                "Tavily": []
             }
             
             # 將探測結果分發到對應的分類盒子裡
@@ -1249,7 +1257,7 @@ async def check_all_apis(ctx):
                     safe_memo = str(memo).replace('\n', ' ')[:80] + ("..." if len(str(memo)) > 80 else "")
                     row = f"{name:<14} | {status:<14} | {safe_memo}\n"
                     
-                    # ✂️ 雙重極限防護：萬一單一分類(例如妳放了 50 把 Groq)還是超過 Discord 上限，自動在內部續接
+                    # ✂️ 雙重極限防護：萬一單一分類超過 Discord 上限，自動在內部續接
                     if len(current_chunk) + len(row) > 1850:
                         current_chunk += "```"
                         await ctx.send(current_chunk)
