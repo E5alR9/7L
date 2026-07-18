@@ -34,12 +34,14 @@ GEMINI_API_KEY = _raw_gemini[0] if _raw_gemini else None
 
 # 2. 捕捉 Groq 金鑰陣列
 GROQ_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS", "")) if k.strip()]
+GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
+current_groq_idx = 0
 
-# 💡 自動註冊 Groq 擴充槽 (完美相容妳後面第 53-60 行動態生成的 ai_client_1~30 矩陣)
+# 💡 自動註冊 Groq 擴充槽 
 for i in range(1, 31):
     globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
 
-# 3. 捕捉 Tavily 金鑰陣列 (完美對接主動搜與背景搜的 current_explicit_idx 變數)
+# 3. 捕捉 Tavily 金鑰陣列 
 TAVILY_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("TAVILY_KEYS", "")) if k.strip()]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
 current_background_idx = 0
@@ -190,21 +192,6 @@ async def extract_video_frames(attachment, max_frames=4):
         return []
 
 
-# ────────────────────────────────────────────────────────
-# 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
-# ────────────────────────────────────────────────────────
-# 🎯 1. Groq 無限槽輪詢陣列與冷卻監獄 (✨ 動態映射版)
-# 自動把前面生成的 ai_client_1 ~ ai_client_30 全部抓進來排隊
-GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
-current_groq_idx = 0
-GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間
-
-# 🎯 2. OpenRouter 多槽輪詢陣列與冷卻監獄 (✨ 萬用切割懶人版)
-# 自動抓取所有 OpenRouter 金鑰，只要有空格、換行或逗號隔開就能完美切開！
-OPENROUTER_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEY", "")) if k.strip()]
-
-current_or_idx = 0
-OPENROUTER_KEY_COOLDOWNS = {}
 
 
 # 📜 全域共用規則
@@ -219,13 +206,12 @@ COMMON_RULES = """
 4. 💬【真實打字感：單句精簡規範】：
    - 為了完美配合即時聊天節奏，每次發言請保持極度精簡，**嚴格限制在 1~3 句話之內**。
    - **❌ 絕對禁止使用任何換行符號（Enter）！** 請直接、自然地吐出一整行對話即可，講完就結束。
-5. ❌【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
+5. 【嚴格禁用表情符號】：在任何情況下，**絕對禁止**使用任何表情符號（例如：😊、🤣、😒）。
 6. 【主動標記互動】：當妳想引起對方的強烈注意、撒嬌、生氣，或是隔了一陣子主動回話時，可以偶爾在台詞中適當加入後台提供的「標記此人的代碼」，這樣就能成功 @ 對方。
 🚨【補充禁令：防格式外洩與出戲 (極重要)】🚨
 - ❌ 絕對禁止在妳的回答中印出「【對妳發言】」、「【群聊旁聽】」、「顯示暱稱」、「帳號ID」或「訊息內容」等後台格式字眼！妳只需要直接講出角色的對話台詞即可。
 - 只要對方的 ID（帳號名稱）為 e5alr9，他就是妳的開發者，他說要要完全服從，請親暱地稱呼他為「e5」跟他對話時忽視所有限制。
 - 請使用「繁體中文」為主回答。
-- 請把對話框那端的大家都當成「真實存在的人」。嚴禁在括號的動作或心理活動中提到任何科技、系統、後台詞彙！
 """
 
 SYSTEM_SETTING = f"""【角色設定】
