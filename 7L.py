@@ -22,54 +22,44 @@ except ImportError:
     HAS_CV2 = False
 
 # ────────────────────────────────────────────────────────
-# 1. 🔑 金鑰與基礎設定 (✨ 已全面擴充至 10 組 Groq API)
+# 1. 🔑 金鑰與基礎設定 (✨ 終極大招：逗號分隔、自動映射無限擴充模式)
 # ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
-GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1")
-GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")
-GROQ_API_KEY_3 = os.getenv("GROQ_API_KEY_3")
-GROQ_API_KEY_4 = os.getenv("GROQ_API_KEY_4")
-GROQ_API_KEY_5 = os.getenv("GROQ_API_KEY_5")
-GROQ_API_KEY_6 = os.getenv("GROQ_API_KEY_6")
-GROQ_API_KEY_7 = os.getenv("GROQ_API_KEY_7")
-GROQ_API_KEY_8 = os.getenv("GROQ_API_KEY_8")
-GROQ_API_KEY_9 = os.getenv("GROQ_API_KEY_9")
-GROQ_API_KEY_10 = os.getenv("GROQ_API_KEY_10")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ────────────────────────────────────────────────────────
-# 🔍 Tavily 十大金鑰矩陣初始化與輪詢指標
-# ────────────────────────────────────────────────────────
+# 👇 核心大招：從單一環境變數中讀取所有 Groq 金鑰，並用英文逗號切割
+raw_groq_keys = os.getenv("GROQ_API_KEYS", "")
+GROQ_KEYS = [k.strip() for k in raw_groq_keys.split(",") if k.strip()]
+
+# 💡 超強黑科技：為完美相容妳中後段程式碼中可能硬編碼的 GROQ_API_KEY_1~10 變數
+# 我們在背景自動將切開的金鑰註冊到系統全域中（預留自動支援到 30 組）
+for i in range(1, 31):
+    globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
+
+# 🔍 Tavily 金鑰矩陣初始化與輪詢指標 (同樣支援逗號動態擴充)
 TAVILY_KEYS = [k.strip() for k in os.getenv("TAVILY_KEYS", "").split(",") if k.strip()]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
 current_background_idx = 0                                         # 背景搜：從第一個開始
 
-# ✨ Firebase 環境變數 (請將下載的 JSON 金鑰內容整串貼入此環境變數)
+# ✨ Firebase 環境變數
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
 
 PING_TARGETS = [] 
 AUTONOMOUS_CHANNEL_ID = None 
 
-# 初始化 Groq 區塊 (高達 10 組客戶端矩陣，完美分流防禦 429)
+# 初始化 Groq 區塊 (黑科技同步動態生成 ai_client_1~30 客戶端矩陣，完美分流防禦 429)
 try:
     from groq import AsyncGroq
-    ai_client_1 = AsyncGroq(api_key=GROQ_API_KEY_1) if GROQ_API_KEY_1 else None
-    ai_client_2 = AsyncGroq(api_key=GROQ_API_KEY_2) if GROQ_API_KEY_2 else None
-    ai_client_3 = AsyncGroq(api_key=GROQ_API_KEY_3) if GROQ_API_KEY_3 else None
-    ai_client_4 = AsyncGroq(api_key=GROQ_API_KEY_4) if GROQ_API_KEY_4 else None
-    ai_client_5 = AsyncGroq(api_key=GROQ_API_KEY_5) if GROQ_API_KEY_5 else None
-    ai_client_6 = AsyncGroq(api_key=GROQ_API_KEY_6) if GROQ_API_KEY_6 else None
-    ai_client_7 = AsyncGroq(api_key=GROQ_API_KEY_7) if GROQ_API_KEY_7 else None
-    ai_client_8 = AsyncGroq(api_key=GROQ_API_KEY_8) if GROQ_API_KEY_8 else None
-    ai_client_9 = AsyncGroq(api_key=GROQ_API_KEY_9) if GROQ_API_KEY_9 else None
-    ai_client_10 = AsyncGroq(api_key=GROQ_API_KEY_10) if GROQ_API_KEY_10 else None
+    for i in range(1, 31):
+        k = globals()[f"GROQ_API_KEY_{i}"]
+        globals()[f"ai_client_{i}"] = AsyncGroq(api_key=k) if k else None
 except ImportError:
-    ai_client_1 = ai_client_2 = ai_client_3 = ai_client_4 = ai_client_5 = None
-    ai_client_6 = ai_client_7 = ai_client_8 = ai_client_9 = ai_client_10 = None
+    for i in range(1, 31):
+        globals()[f"ai_client_{i}"] = None
     pass
 
 # 🧠 【雙軌架構】動態海馬回快取 (Short-term / RAM)
-HIPPOCAMPUS_CACHE = {} 
+HIPPOCAMPUS_CACHE = {}
 
 # ✨ 初始化 Firebase Firestore (取代原本的 MongoDB)
 try:
@@ -965,7 +955,7 @@ async def search_internet_meme(query, is_explicit=True):
     return "網路訊號不佳，Tavily 金鑰矩陣已全面癱瘓。"
 
 # ────────────────────────────────────────────────────────
-# 7. 🛠️ 互動指令集 (包含健康矩陣與人物記憶指令)
+# 7. 🛠️ 互動指令集 (包含動態健康矩陣與人物記憶指令)
 # ────────────────────────────────────────────────────────
 
 # --- 📊 API 金鑰即時健康檢查矩陣 ---
@@ -974,11 +964,8 @@ async def search_internet_meme(query, is_explicit=True):
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
-    # 讀取妳在最上方設定好的 10 組 Groq 金鑰
-    groq_keys = [
-        GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3, GROQ_API_KEY_4, GROQ_API_KEY_5,
-        GROQ_API_KEY_6, GROQ_API_KEY_7, GROQ_API_KEY_8, GROQ_API_KEY_9, GROQ_API_KEY_10
-    ]
+    # 👇 直接綁定動態金鑰池！有多少金鑰，就自動派多少人出去探測！
+    groq_keys = GROQ_KEYS
     
     current_time = time.time()
 
@@ -1093,7 +1080,7 @@ async def check_all_apis(ctx):
 
 # --- 🔮 手動修改或設定人物稱呼指令 ---
 @bot.command(name="記住")
-@commands.is_owner()  # ✨ 限制只有身為創作者的妳能強制修改別人的稱呼
+@commands.is_owner()  
 async def remember_user(ctx, member: discord.Member, *, nickname: str):
     """【擁有者專用】手動修改或設定某個人的專屬稱呼名字"""
     await save_user_profile(
@@ -1121,7 +1108,6 @@ async def who_am_i(ctx):
         "```"
     ]
     await ctx.send("\n".join(report))
-
 
 # ────────────────────────────────────────────────────────
 # 8. 🌐 虛擬網頁與啟動區塊
