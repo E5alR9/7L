@@ -35,7 +35,15 @@ GROQ_API_KEY_8 = os.getenv("GROQ_API_KEY_8")
 GROQ_API_KEY_9 = os.getenv("GROQ_API_KEY_9")
 GROQ_API_KEY_10 = os.getenv("GROQ_API_KEY_10")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+# ✨ 改成 10 組 OpenRouter 金鑰
+OPENROUTER_KEYS = [
+    os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)
+]
+OPENROUTER_KEYS = [k for k in OPENROUTER_KEYS if k] # 自動過濾掉沒填的空槽
+
+current_or_idx = 0
+OPENROUTER_KEY_COOLDOWNS = {}
 
 # ────────────────────────────────────────────────────────
 # 🔍 Tavily 十大金鑰矩陣初始化與輪詢指標
@@ -161,14 +169,24 @@ async def extract_video_frames(attachment, max_frames=4):
 # ────────────────────────────────────────────────────────
 # 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
 # ────────────────────────────────────────────────────────
+# 🎯 1. Groq 10 槽輪詢陣列與冷卻監獄
 GROQ_CLIENTS = [
     ai_client_10, ai_client_9, ai_client_8, ai_client_7, ai_client_6, 
     ai_client_5, ai_client_4, ai_client_3, ai_client_2, ai_client_1
 ]
 current_groq_idx = 0
-GROQ_KEY_COOLDOWNS = {}
+GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間，格式 { 10: 1700000300.0 }
 
-current_groq_idx = 0  # 紀錄目前輪到第幾把金鑰
+# 🎯 2. OpenRouter 10 槽輪詢陣列與冷卻監獄 (✨ 新增)
+# 自動從環境變數讀取 OPENROUTER_API_KEY_1 ~ OPENROUTER_API_KEY_10
+OPENROUTER_KEYS = [
+    os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)
+]
+# 自動過濾掉沒填的空槽 (如果你只填了 5 把，它就只會用這 5 把去輪)
+OPENROUTER_KEYS = [k for k in OPENROUTER_KEYS if k] 
+
+current_or_idx = 0
+OPENROUTER_KEY_COOLDOWNS = {}  # 用來記錄 OpenRouter 金鑰出獄時間
 # 📜 全域共用規則
 COMMON_RULES = """
 【🚨 多人群聊與認人規範 🚨】
@@ -546,10 +564,11 @@ async def on_message(message):
     await bot.process_commands(message)
     
 # ────────────────────────────────────────────────────────
-# 5. 🧠 跨平台備援核心（動態冷卻與精準出獄版）
+# 5. 🧠 跨平台備援核心（雙核 20 槽動態冷卻完美版）
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
+    global current_or_idx, OPENROUTER_KEY_COOLDOWNS  # ✨ 引入 OpenRouter 的指標與監獄
     
     # ─── 🕒 動態注入現實時間 ───
     try:
@@ -558,65 +577,92 @@ async def fetch_ai_response(messages, require_vision=False):
         weekday_map = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"}
         time_context = f"\n\n【現實世界時間提示】現在時間是：{time_str} (星期{weekday_map[int(tw_time.strftime('%w'))]})。請根據時間和性格做出對應反應。"
         if messages and messages[0]["role"] == "system":
+            # 為了避免重複疊加，先清乾淨上一輪注入的提示（如果有的話）
+            messages[0]["content"] = re.sub(r'\n\n【現實世界時間提示】.*', '', messages[0]["content"])
             messages[0]["content"] += time_context
     except Exception as e:
         print(f"【⚠️ 時間注入失敗】: {e}")
 
-    # ⚡ 動態過濾：把還在冷卻監獄裡的鑰匙剔除
     current_time = time.time()
-    available_clients = []
     
+    # ⚡ 動態過濾：Groq 監獄 (10 -> 1)
+    available_clients = []
     for i, client in enumerate(GROQ_CLIENTS):
-        key_index = 10 - i  # 換算成第 10 ~ 第 1 組
+        key_index = 10 - i  
         if key_index in GROQ_KEY_COOLDOWNS:
             if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
                 print(f"【🟢 出獄通知】第 {key_index} 組 Groq 金鑰已過冷卻期，重新歸隊！")
                 del GROQ_KEY_COOLDOWNS[key_index]
                 if client: available_clients.append(client)
-            else:
-                pass # 🤫 還在關禁閉，默默跳過
         else:
             if client: available_clients.append(client)
 
-    # 決定這次的主力輪詢順序
     if available_clients:
         start_idx = current_groq_idx % len(available_clients)
         current_groq_idx = (current_groq_idx + 1) % len(available_clients)
         ordered_clients = [available_clients[(start_idx + i) % len(available_clients)] for i in range(len(available_clients))]
     else:
-        print("【🚨 警告】所有 Groq 金鑰皆在冷卻中！自動啟用緊急備援池...")
-        ordered_clients = [] # Groq 全滅，下面會自動只剩 Gemini 和 OpenRouter
+        print("【🚨 警告】所有 Groq 金鑰皆在冷卻中！")
+        ordered_clients = []
+
+    # ⚡ 動態過濾：OpenRouter 監獄 (✨ 新增)
+    available_or_keys = []
+    for i, key in enumerate(OPENROUTER_KEYS):
+        if i in OPENROUTER_KEY_COOLDOWNS:
+            if current_time >= OPENROUTER_KEY_COOLDOWNS[i]:
+                print(f"【🟢 出獄通知】第 {i+1} 組 OpenRouter 金鑰已過冷卻期，重新歸隊！")
+                del OPENROUTER_KEY_COOLDOWNS[i]
+                if key: available_or_keys.append((i, key))
+        else:
+            if key: available_or_keys.append((i, key))
+
+    if available_or_keys:
+        start_or_idx = current_or_idx % len(available_or_keys)
+        current_or_idx = (current_or_idx + 1) % len(available_or_keys)
+        ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
+    else:
+        print("【🚨 警告】所有 OpenRouter 金鑰皆在冷卻中！")
+        ordered_or_keys = []
         
-    # 動態產生模型池
+    # 🧠 動態產生 20 槽混合大腦模型池
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 第一梯隊
+    # 🌟 第一梯隊 (主力重裝)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
+    
+    # ✨ OpenRouter 10槽輪詢完美切入
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
+        
+    # 基礎 Gemini 作為核心視覺與穩定底線
     DYNAMIC_MODEL_POOLS.extend([
-        {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},
-        {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free"},
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
         {"provider": "gemini", "model": "gemini-1.5-flash"}
     ])
 
-    # 💎 第二梯隊
+    # 💎 第二梯隊 (中型速度款)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3.6-27b"})
-    DYNAMIC_MODEL_POOLS.extend([
-        {"provider": "openrouter", "model": "qwen/qwen-2.5-32b-instruct:free"},
-        {"provider": "openrouter", "model": "mistralai/mixtral-8x7b-instruct:free"}
-    ])
+    
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-32b-instruct:free"})
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "mistralai/mixtral-8x7b-instruct:free"})
 
-    # ⚡ 第三與第四梯隊
+    # ⚡ 第三與第四梯隊 (極速與輕量款)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "meta-llama/llama-4-scout-17b-16e-instruct"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
-    DYNAMIC_MODEL_POOLS.extend([
-        {"provider": "openrouter", "model": "google/gemma-2-9b-it:free"},
-        {"provider": "openrouter", "model": "meta-llama/llama-3-8b-instruct:free"},
-        {"provider": "openrouter", "model": "meta-llama/llama-3.2-3b-instruct:free"}
-    ])
+    
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-2-9b-it:free"})
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3-8b-instruct:free"})
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
 
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
@@ -656,25 +702,33 @@ async def fetch_ai_response(messages, require_vision=False):
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
+                        else:
+                            raise Exception(f"Gemini HTTP {resp.status}")
                             
-            elif provider == "openrouter" and OPENROUTER_API_KEY:
-                print(f"【🧠 嘗試】使用 OpenRouter 模型 {model_name}...")
+            elif provider == "openrouter":
+                target_key = item.get("key")
+                key_idx = item.get("key_idx")
+                if not target_key: continue # 預防空鑰匙
+                
+                print(f"【🧠 嘗試】使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+                headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
+                        else:
+                            error_text = await resp.text()
+                            raise Exception(f"HTTP {resp.status}: {error_text}")
                             
         except Exception as e:
             error_msg = str(e)
-            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤: {error_msg}。直接切換...")
+            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
-            # 🎯 核心精華：動態解析 Groq 的 429 錯誤時間
+            # 🎯 Groq 429 監獄處理
             if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_index = 10 - GROQ_CLIENTS.index(target_client)
-                # 使用 Regex 抓取 "try again in XhYmZ.Zs" 的時間
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
@@ -682,20 +736,26 @@ async def fetch_ai_response(messages, require_vision=False):
                     seconds = float(match.group(3)) if match.group(3) else 0.0
                     total_seconds = hours * 3600 + minutes * 60 + seconds
                 else:
-                    total_seconds = 60 # 解析失敗就預設關 60 秒
+                    total_seconds = 60
                 
-                # 給系統 5 秒緩衝時間，避免解封當下立刻撞車
                 total_seconds = max(5.0, total_seconds + 5)
                 GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
                 
                 if total_seconds > 60:
-                    print(f"【🛑 封印金鑰】第 {key_index} 組觸發上限，精準封印 {total_seconds/60:.1f} 分鐘。")
+                    print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds/60:.1f} 分鐘。")
                 else:
-                    print(f"【🛑 封印金鑰】第 {key_index} 組觸發上限，精準封印 {total_seconds:.1f} 秒。")
+                    print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds:.1f} 秒。")
 
-            continue # 繼續迴圈，找下一個能用的大腦
+            # 🎯 OpenRouter 429 監獄處理 (✨ 新增)
+            elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
+                key_idx = item.get("key_idx")
+                cooldown_sec = 60  # OpenRouter 免費額度通常是每分鐘頻率限制，關禁閉 60 秒即可
+                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + cooldown_sec
+                print(f"【🛑 封印金鑰】第 {key_idx+1} 組 OpenRouter 觸發上限，精準封印 {cooldown_sec} 秒。")
 
-    return "（7L 揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
+            continue # 繼續迴圈，找下一顆大腦
+
+    return "（揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
 
 # ────────────────────────────────────────────────────────
 # 🌐 網路聯想探針（Tavily 動態輪詢負載均衡矩陣）
