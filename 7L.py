@@ -382,7 +382,12 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
-    if message.author == bot.user or message.mention_everyone:
+    if message.author.bot:
+        return
+
+    # 🚀【新增防呆】如果訊息是以 * 開頭的指令，直接去跑指令，不要觸發後面的群聊旁聽或 AI 大腦！
+    if message.content.startswith("*"):
+        await bot.process_commands(message)
         return
 
     channel_id = message.channel.id
@@ -1018,17 +1023,17 @@ async def search_internet_meme(query, is_explicit=True):
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
-    # 👇 直接綁定動態金鑰池！有多少金鑰，就自動派多少人出去探測！
     groq_keys = GROQ_KEYS
-    
     current_time = time.time()
+
+    # 🎯 建立標準的強固型超時設定 (連線+讀取總共限制 4 秒)
+    api_timeout = aiohttp.ClientTimeout(total=4)
 
     # 1. 偵測 Groq 狀態與內部監獄狀況
     async def check_groq(session, key, index):
         if not key: 
             return f"Groq-{index:02d}", "⚪ 未設定", "-"
         
-        # 檢查 7L 的 Groq 監獄狀態
         if index in GROQ_KEY_COOLDOWNS:
             rem = GROQ_KEY_COOLDOWNS[index] - current_time
             if rem > 0:
@@ -1037,7 +1042,7 @@ async def check_all_apis(ctx):
         url = "https://api.groq.com/openai/v1/models"
         headers = {"Authorization": f"Bearer {key}"}
         try:
-            async with session.get(url, headers=headers, timeout=4) as resp:
+            async with session.get(url, headers=headers, timeout=api_timeout) as resp:
                 if resp.status == 200: 
                     return f"Groq-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
@@ -1054,7 +1059,6 @@ async def check_all_apis(ctx):
         if not key: 
             return f"OpenRouter-{index}", "⚪ 未設定", "-"
             
-        # 檢查 7L 的 OpenRouter 監獄狀態
         if (index - 1) in OPENROUTER_KEY_COOLDOWNS:
             rem = OPENROUTER_KEY_COOLDOWNS[index - 1] - current_time
             if rem > 0:
@@ -1063,7 +1067,7 @@ async def check_all_apis(ctx):
         url = "https://openrouter.ai/api/v1/key"
         headers = {"Authorization": f"Bearer {key}"}
         try:
-            async with session.get(url, headers=headers, timeout=4) as resp:
+            async with session.get(url, headers=headers, timeout=api_timeout) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     rem_usd = data.get("data", {}).get("limit_remaining")
@@ -1074,7 +1078,7 @@ async def check_all_apis(ctx):
                 else: 
                     return f"OpenRouter-{index}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return f"OpenRouter-{index}", "💥 連線異常", ""
+            return f"OpenRouter-{index}", "💥 連線異常", "Timeout/網路失敗"
 
     # 3. 偵測 Tavily 狀態
     async def check_tavily(session, key, index):
@@ -1083,7 +1087,7 @@ async def check_all_apis(ctx):
         url = "https://api.tavily.com/search"
         payload = {"api_key": key, "query": "ping", "max_results": 1}
         try:
-            async with session.post(url, json=payload, timeout=4) as resp:
+            async with session.post(url, json=payload, timeout=api_timeout) as resp:
                 if resp.status == 200: 
                     return f"Tavily-{index}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
                 elif resp.status in [429, 403]: 
@@ -1091,7 +1095,7 @@ async def check_all_apis(ctx):
                 else: 
                     return f"Tavily-{index}", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return f"Tavily-{index}", "💥 連線異常", ""
+            return f"Tavily-{index}", "💥 連線異常", "Timeout/網路失敗"
 
     # 4. 偵測 Gemini 狀態
     async def check_gemini(session, key):
@@ -1099,7 +1103,7 @@ async def check_all_apis(ctx):
             return "Gemini-1", "⚪ 未設定", "-"
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
         try:
-            async with session.get(url, timeout=4) as resp:
+            async with session.get(url, timeout=api_timeout) as resp:
                 if resp.status == 200: 
                     return "Gemini-1", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
@@ -1107,7 +1111,7 @@ async def check_all_apis(ctx):
                 else: 
                     return "Gemini-1", f"❌ {resp.status} 錯誤", ""
         except Exception: 
-            return "Gemini-1", "💥 連線異常", ""
+            return "Gemini-1", "💥 連線異常", "Timeout/網路失敗"
 
     # 併發非同步發送所有盲測請求
     async with aiohttp.ClientSession() as session:
