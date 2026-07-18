@@ -1289,14 +1289,14 @@ async def check_all_apis(ctx):
         if index in GROQ_KEY_COOLDOWNS:
             rem = GROQ_KEY_COOLDOWNS[index] - current_time
             if rem > 0:
-                return f"Groq-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                return f"Groq-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
                 
         url = "https://api.groq.com/openai/v1/models"
         headers = {"Authorization": f"Bearer {key}"}
         try:
             async with session.get(url, headers=headers, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Groq-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                    return f"Groq-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
                     return f"Groq-{index:02d}", "🛑 429 限流", "額度已滿"
                 elif resp.status == 401:
@@ -1314,7 +1314,7 @@ async def check_all_apis(ctx):
         if (index - 1) in OPENROUTER_KEY_COOLDOWNS:
             rem = OPENROUTER_KEY_COOLDOWNS[index - 1] - current_time
             if rem > 0:
-                return f"OpenRouter-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                return f"OpenRouter-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
                 
         url = "https://openrouter.ai/api/v1/key"
         headers = {"Authorization": f"Bearer {key}"}
@@ -1324,7 +1324,7 @@ async def check_all_apis(ctx):
                     data = await resp.json()
                     rem_usd = data.get("data", {}).get("limit_remaining")
                     rem_str = f"剩餘: {rem_usd:.4f} USD" if rem_usd is not None else "額度正常"
-                    return f"OpenRouter-{index:02d}", "🟢 200 OK", rem_str
+                    return f"OpenRouter-{index:02d}", "🟢 200 可用", rem_str
                 elif resp.status == 429: 
                     return f"OpenRouter-{index:02d}", "🛑 429 限流", "頻率過高"
                 else: 
@@ -1341,7 +1341,7 @@ async def check_all_apis(ctx):
         try:
             async with session.post(url, json=payload, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Tavily-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                    return f"Tavily-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
                 elif resp.status in [429, 403]: 
                     return f"Tavily-{index:02d}", "🛑 429/403 滿", "免費額度耗盡"
                 else: 
@@ -1357,13 +1357,13 @@ async def check_all_apis(ctx):
         if (index - 1) in GEMINI_KEY_COOLDOWNS:
             rem = GEMINI_KEY_COOLDOWNS[index - 1] - current_time
             if rem > 0:
-                return f"Gemini-{index:02d}", f"🔒 監獄中 ({int(rem)}s)", "內部限流鎖定"
+                return f"Gemini-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
                 
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
         try:
             async with session.get(url, timeout=api_timeout) as resp:
                 if resp.status == 200: 
-                    return f"Gemini-{index:02d}", "🟢 200 OK", f"尾碼: ...{key[-6:]}"
+                    return f"Gemini-{index:02d}", "🟢 200 可用", f"尾碼: ...{key[-6:]}"
                 elif resp.status == 429: 
                     return f"Gemini-{index:02d}", "🛑 429 限流", "請稍候再試"
                 else: 
@@ -1392,8 +1392,8 @@ async def check_all_apis(ctx):
             categories = {
                 "Groq": [],
                 "OpenRouter": [],
-                "Gemini": [],
-                "Tavily": []
+                "Tavily": [],
+                "Gemini": []
             }
             
             # 將探測結果分發到對應的分類盒子裡
