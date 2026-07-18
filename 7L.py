@@ -193,6 +193,11 @@ async def save_to_long_term_memory(channel_id, history):
 
             # ⚡ 使用 asyncio.create_task 在背景執行，不會卡住前台機器人聊天速度
             asyncio.create_task(generate_and_save_tags(channel_id, clean_history))
+            # ✨ 補上這行：觸發每日去重濃縮日記任務！
+            asyncio.create_task(update_daily_diary(channel_id, clean_history))
+            
+        except Exception as e:
+            print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
             
         except Exception as e:
             print(f"【⚠️ 儲存失敗】無法同步記憶至 Firebase 雲端: {e}")
