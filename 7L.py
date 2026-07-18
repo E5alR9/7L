@@ -113,35 +113,64 @@ else:
 
 
 # ────────────────────────────────────────────────────────
-# 💾 雲端長存記憶（Firebase 先掃瞄再下載架構）
+# 💾 雲端長存記憶（Firebase 線索觸發、選擇性下載架構）
 # ────────────────────────────────────────────────────────
-async def fetch_from_long_term_memory(channel_id):
+async def fetch_from_long_term_memory(channel_id, current_user_msg=""):
     if db is not None:
         try:
             history = []
+            need_deep_recall = False  # 預設為不需要深層回憶
             
-            # 1. 🔍 讀取「目錄/標籤」層
+            # 1. 🔍 永遠先掃描最輕量的「目錄/標籤」層 (這就像人類大腦皮質的快速索引)
             meta_ref = db.collection("channel_meta").document(str(channel_id))
             meta_doc = await meta_ref.get()
+            
+            summary_tags = ""
             if meta_doc.exists:
                 meta_data = meta_doc.to_dict()
-                summary_tags = meta_data.get("summary_tags", "")
+                summary_tags = meta_data.get("summary_tags", "").strip()
+                
+                # 即使不下載日記，標籤也可以當作極輕量的潛意識背景
                 if summary_tags:
-                    history.append({"role": "system", "content": f"【長存記憶標籤】：{summary_tags}"})
+                    history.append({"role": "system", "content": f"【潛意識核心記憶標籤】：{summary_tags}"})
 
-            # 2. 📓 讀取「今日濃縮日記」(✨ 這就是妳辛苦壓縮的精華！)
-            tz = ZoneInfo("Asia/Taipei")
-            today_str = datetime.now(tz).strftime("%Y-%m-%d")
-            diary_ref = db.collection("daily_diary").document(today_str)
-            diary_doc = await diary_ref.get()
-            
-            if diary_doc.exists:
-                diary_data = diary_doc.to_dict()
-                today_diary = diary_data.get("summaries", {}).get(str(channel_id), "")
-                if today_diary:
-                    history.append({"role": "system", "content": f"【妳腦海中今天的總結記憶】：{today_diary}"})
-            
-            # 3. 📥 讀取「最近 15 筆對話原文」(用來接續當下的話題)
+            # 2. 🧠 心理學線索分析：判定使用者當下這句話，是否需要觸發「深層回憶」
+            if current_user_msg:
+                msg_lower = current_user_msg.lower()
+                
+                # (A) 懷舊感官詞庫：只要使用者提到這些詞，代表在探尋過去
+                nostalgia_triggers = ["上次", "之前", "那天", "記得", "回憶", "日記", "歷史", "過去", "前天", "昨天"]
+                if any(trigger in msg_lower for trigger in nostalgia_triggers):
+                    need_deep_recall = True
+                    print(f"【💡 記憶觸發】使用者提及懷舊詞彙 '{[t for t in nostalgia_triggers if t in msg_lower]}', 啟動深層記憶檢索。")
+                
+                # (B) 標籤動態命中：如果使用者講的話，跟大腦索引標籤裡的關鍵字重疊了
+                if not need_deep_recall and summary_tags:
+                    # 將標籤切開（假設是用空格、逗號或頓號隔開），檢查是否有字眼出現在對話中
+                    tag_list = [t.strip() for t in re.split(r'[\s,，、#]+', summary_tags) if len(t.strip()) > 1]
+                    matched_tags = [tag for tag in tag_list if tag in msg_lower]
+                    if matched_tags:
+                        need_deep_recall = True
+                        print(f"【💡 標籤命中】使用者話題命中記憶標籤 {matched_tags}, 喚醒相關深層日記。")
+
+            # 3. 📓 選擇性下載：只有被觸發時，才去下載「今日濃縮日記」
+            if need_deep_recall:
+                tz = ZoneInfo("Asia/Taipei")
+                today_str = datetime.now(tz).strftime("%Y-%m-%d")
+                diary_ref = db.collection("daily_diary").document(today_str)
+                diary_doc = await diary_ref.get()
+                
+                if diary_doc.exists:
+                    diary_data = diary_doc.to_dict()
+                    today_diary = diary_data.get("summaries", {}).get(str(channel_id), "")
+                    if today_diary:
+                        history.append({"role": "system", "content": f"【妳被喚醒的今日核心記憶】：{today_diary}"})
+                        print(f"【📥 記憶讀取】成功精準加載頻道 {channel_id} 的今日濃縮日記。")
+            else:
+                # 沒被觸發時，大腦保持輕量狀態
+                print(f"【🍃 輕量運作】話題屬於當下寒暄，跳過日記下載，節省資源。")
+
+            # 4. 📥 永遠讀取「最近 15 筆對話原文」(接續當下話題必備)
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
@@ -153,6 +182,7 @@ async def fetch_from_long_term_memory(channel_id):
         except Exception as e:
             print(f"【⚠️ 讀取失敗】無法自雲端讀取頻道 {channel_id} 的長存記憶: {e}")
     return []
+    
 
 # 🛠️ 輔助函式：用來安全提取多模態 (Vision) 或純文字的內容
 def extract_text_from_content(content):
