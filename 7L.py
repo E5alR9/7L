@@ -333,15 +333,15 @@ async def get_user_profile(user_id: int, user_obj=None):
         return USER_MEMORY_CACHE[uid_str]
     
     try:
-        # 💡 自動對接妳前面初始化好的 db 物件，建立 user_memory 集合
-        doc_ref = db.collection("user_memory").document(uid_str)
-        loop = asyncio.get_event_loop()
-        doc = await loop.run_in_executor(None, doc_ref.get)
-        
-        if doc.exists:
-            data = doc.to_dict()
-            USER_MEMORY_CACHE[uid_str] = data
-            return data
+        # 💡 已修正：安全地使用非同步 await，並加上 db 檢查
+        if db is not None:
+            doc_ref = db.collection("user_memory").document(uid_str)
+            doc = await doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                USER_MEMORY_CACHE[uid_str] = data
+                return data
     except Exception as e:
         print(f"【⚠️ Firebase 錯誤】讀取人物記憶失敗: {e}")
         
@@ -370,14 +370,12 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
     # 同步到快取與 Firebase
     USER_MEMORY_CACHE[uid_str] = profile
     try:
-        doc_ref = db.collection("user_memory").document(uid_str)
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: doc_ref.set(profile, merge=True))
-        print(f"【💾 人物記憶鞏固】已成功儲存 {display_name} 的大腦檔案。")
+        if db is not None:
+            doc_ref = db.collection("user_memory").document(uid_str)
+            await doc_ref.set(profile, merge=True)
+            print(f"【💾 人物記憶鞏固】已成功儲存 {display_name} 的大腦檔案。")
     except Exception as e:
         print(f"【⚠️ Firebase 錯誤】儲存人物記憶失敗: {e}")
-
-
 
 # ────────────────────────────────────────────────────────
 # 5. 💬 訊息處理核心 (✨ 自主潛意識改名 + 人物記憶雙軌優化版)
@@ -706,10 +704,10 @@ async def fetch_ai_response(messages, require_vision=False):
 
     current_time = time.time()
     
-    # ⚡ 動態過濾：Groq 監獄初始檢查
+    # ⚡ 動態過濾：Groq 監獄初始檢查 (💡 修正：對應 1~N 無限擴充槽)
     available_clients = []
     for i, client in enumerate(GROQ_CLIENTS):
-        key_index = 10 - i  
+        key_index = i + 1  
         if key_index in GROQ_KEY_COOLDOWNS:
             if current_time >= GROQ_KEY_COOLDOWNS[key_index]:
                 print(f"【🟢 出獄通知】第 {key_index} 組 Groq 金鑰已過冷卻期，重新歸隊！")
@@ -763,20 +761,20 @@ async def fetch_ai_response(messages, require_vision=False):
 
     # 💎 第二梯隊 (中型速度款 - ✨ 注入全新開源神模 Gemma 3 27B)
     for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"}) # 🆕 Gemma 3 27B 頂級中堅！
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-20b"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "qwen/qwen3-32b"})
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-32b-instruct:free"})
 
-    # ⚡ 第三與第四梯隊 (極速與輕量款防線 - ✨ 全面換裝最新 DeepSeek 與保底自動 Router)
+    # ⚡ 第三與第四梯隊 (極速與輕量款防線)
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.1-8b-instant"})
     for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) # 🆕 DeepSeek V3 免費版
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"}) 
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
     for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"}) # 🆕 最終防線：免費路由自動分流
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"}) 
 
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
@@ -787,7 +785,7 @@ async def fetch_ai_response(messages, require_vision=False):
         
         loop_now = time.time()
         if provider == "groq" and target_client:
-            k_idx = 10 - GROQ_CLIENTS.index(target_client)
+            k_idx = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
             if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]:
                 continue
         
@@ -813,7 +811,7 @@ async def fetch_ai_response(messages, require_vision=False):
 
         try:
             if provider == "groq":
-                key_index = 10 - GROQ_CLIENTS.index(target_client)
+                key_index = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
                 print(f"【🧠 嘗試】使用 Groq {model_name} (第 {key_index} 組金鑰)...")
                 chat_completion = await target_client.chat.completions.create(messages=current_messages, model=model_name)
                 return chat_completion.choices[0].message.content
@@ -852,7 +850,7 @@ async def fetch_ai_response(messages, require_vision=False):
             print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
             if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
-                key_index = 10 - GROQ_CLIENTS.index(target_client)
+                key_index = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
