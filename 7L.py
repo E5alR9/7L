@@ -1136,36 +1136,7 @@ async def check_all_apis(ctx):
         
         await msg.edit(content="\n".join(report))
 
-# --- 🔮 手動修改或設定人物稱呼指令 ---
-@bot.command(name="記住")
-@commands.is_owner()  
-async def remember_user(ctx, member: discord.Member, *, nickname: str):
-    """【擁有者專用】手動修改或設定某個人的專屬稱呼名字"""
-    await save_user_profile(
-        user_id=member.id,
-        username=member.name,
-        display_name=member.display_name,
-        custom_name=nickname
-    )
-    await ctx.send(f"🔮 **【記憶鞏固】** 好喔！7L 已經在 Firebase 建立大腦檔案。以後看到 **{member.display_name}**，我內心都會叫他 **『{nickname}』** 囉！")
 
-# --- 🔍 讓使用者查詢自己雲端大腦記憶檔案的指令 ---
-@bot.command(name="我是誰")
-async def who_am_i(ctx):
-    """讓使用者查詢 7L 目前對他的大腦記憶檔案"""
-    profile = await get_user_profile(ctx.author.id, ctx.author)
-    c_name = profile.get("custom_name", "")
-    
-    report = [
-        "🔍 **【 7L 的雲端人物記憶檔案 】**",
-        "```yaml",
-        f"使用者唯一 ID : {ctx.author.id}",
-        f"Discord 帳號  : {profile['username']}",
-        f"當前伺服器暱稱 : {profile['display_name']}",
-        f"7L 對妳的稱呼  : {c_name if c_name else '（尚無專屬稱呼，目前跟著伺服器暱稱叫）'}",
-        "```"
-    ]
-    await ctx.send("\n".join(report))
 
 # ────────────────────────────────────────────────────────
 # 8. 🌐 虛擬網頁與啟動區塊
