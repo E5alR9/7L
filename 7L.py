@@ -807,7 +807,6 @@ async def on_message(message):
 
             asyncio.create_task(process_autonomous_reply())
 
-    await bot.process_commands(message)
     
 
 # ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1280,7 +1279,7 @@ async def check_all_apis(ctx):
             if rem > 0:
                 return f"Groq-{index:02d}", f"🔒 429 鎖定中 ({int(rem)}s)", "內部限流鎖定"
                 
-        url = "https://api.groq.com/openai/v1/models"
+        url = "https://openrouter.ai/api/v1/auth/key"
         headers = {"Authorization": f"Bearer {key}"}
         try:
             async with session.get(url, headers=headers, timeout=api_timeout) as resp:
