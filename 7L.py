@@ -562,7 +562,7 @@ async def on_message(message):
 # ────────────────────────────────────────────────────────
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
-    global current_or_idx, OPENROUTER_KEY_COOLDOWNS  # ✨ 引入 OpenRouter 的指標與監獄
+    global current_or_idx, OPENROUTER_KEY_COOLDOWNS
     
     # ─── 🕒 動態注入現實時間 ───
     try:
@@ -571,7 +571,6 @@ async def fetch_ai_response(messages, require_vision=False):
         weekday_map = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"}
         time_context = f"\n\n【現實世界時間提示】現在時間是：{time_str} (星期{weekday_map[int(tw_time.strftime('%w'))]})。請根據時間和性格做出對應反應。"
         if messages and messages[0]["role"] == "system":
-            # 為了避免重複疊加，先清乾淨上一輪注入的提示（如果有的話）
             messages[0]["content"] = re.sub(r'\n\n【現實世界時間提示】.*', '', messages[0]["content"])
             messages[0]["content"] += time_context
     except Exception as e:
@@ -579,7 +578,7 @@ async def fetch_ai_response(messages, require_vision=False):
 
     current_time = time.time()
     
-    # ⚡ 動態過濾：Groq 監獄 (10 -> 1)
+    # ⚡ 動態過濾：Groq 監獄初始檢查
     available_clients = []
     for i, client in enumerate(GROQ_CLIENTS):
         key_index = 10 - i  
@@ -596,10 +595,9 @@ async def fetch_ai_response(messages, require_vision=False):
         current_groq_idx = (current_groq_idx + 1) % len(available_clients)
         ordered_clients = [available_clients[(start_idx + i) % len(available_clients)] for i in range(len(available_clients))]
     else:
-        print("【🚨 警告】所有 Groq 金鑰皆在冷卻中！")
         ordered_clients = []
 
-    # ⚡ 動態過濾：OpenRouter 監獄 (✨ 新增)
+    # ⚡ 動態過濾：OpenRouter 監獄初始檢查
     available_or_keys = []
     for i, key in enumerate(OPENROUTER_KEYS):
         if i in OPENROUTER_KEY_COOLDOWNS:
@@ -615,7 +613,6 @@ async def fetch_ai_response(messages, require_vision=False):
         current_or_idx = (current_or_idx + 1) % len(available_or_keys)
         ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
     else:
-        print("【🚨 警告】所有 OpenRouter 金鑰皆在冷卻中！")
         ordered_or_keys = []
         
     # 🧠 動態產生 20 槽混合大腦模型池
@@ -625,13 +622,12 @@ async def fetch_ai_response(messages, require_vision=False):
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
     for client in ordered_clients: DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
     
-    # ✨ OpenRouter 10槽輪詢完美切入
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
         
-    # 基礎 Gemini 作為核心視覺與穩定底線
+    # 基礎 Gemini
     DYNAMIC_MODEL_POOLS.extend([
         {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
         {"provider": "gemini", "model": "gemini-1.5-flash"}
@@ -665,6 +661,20 @@ async def fetch_ai_response(messages, require_vision=False):
         is_vision_model = item.get("vision", False)
         target_client = item.get("client")
         
+        # 🌟 【⚡ 即時雙重檢查防禦機制】 🌟
+        loop_now = time.time()
+        if provider == "groq" and target_client:
+            k_idx = 10 - GROQ_CLIENTS.index(target_client)
+            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]:
+                # 剛剛前一個模型才剛讓這把鑰匙入獄，後面排隊的模型直接跳過！
+                continue
+        
+        if provider == "openrouter":
+            or_idx = item.get("key_idx")
+            if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]:
+                # 這把 OpenRouter 金鑰已經在監獄裡，直接跳過同請求裡面的其他 OpenRouter 模型
+                continue
+
         if require_vision and not is_vision_model: continue  
         if not require_vision and is_vision_model: continue  
             
@@ -702,7 +712,7 @@ async def fetch_ai_response(messages, require_vision=False):
             elif provider == "openrouter":
                 target_key = item.get("key")
                 key_idx = item.get("key_idx")
-                if not target_key: continue # 預防空鑰匙
+                if not target_key: continue
                 
                 print(f"【🧠 嘗試】使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
@@ -740,14 +750,14 @@ async def fetch_ai_response(messages, require_vision=False):
                 else:
                     print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds:.1f} 秒。")
 
-            # 🎯 OpenRouter 429 監獄處理 (✨ 新增)
+            # 🎯 OpenRouter 429 監獄處理
             elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_idx = item.get("key_idx")
-                cooldown_sec = 60  # OpenRouter 免費額度通常是每分鐘頻率限制，關禁閉 60 秒即可
+                cooldown_sec = 60  
                 OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + cooldown_sec
                 print(f"【🛑 封印金鑰】第 {key_idx+1} 組 OpenRouter 觸發上限，精準封印 {cooldown_sec} 秒。")
 
-            continue # 繼續迴圈，找下一顆大腦
+            continue 
 
     return "（揉了揉太陽穴）呼...現在大腦有點過載，等我一下好不好？"
 
