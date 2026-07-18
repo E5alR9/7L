@@ -1023,7 +1023,7 @@ async def search_internet_meme(query, is_explicit=True):
 
 # --- 📊 API 金鑰即時健康檢查矩陣 ---
 @bot.command(name="api")
-@commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
+# @commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
@@ -1128,19 +1128,48 @@ async def check_all_apis(ctx):
             tasks.append(check_tavily(session, key, idx))
         tasks.append(check_gemini(session, GEMINI_API_KEY))
         
-        results = await asyncio.gather(*tasks)
-        
-        # 繪製美觀的 Markdown 表格
-        report = ["**🔮 【7L 全線 API 金鑰健康矩陣】**", "```markdown"]
-        report.append(f"{'API 項目':<14} | {'狀態狀況':<14} | {'備註 / 剩餘資訊'}")
-        report.append("-" * 55)
-        for name, status, memo in results:
-            report.append(f"{name:<14} | {status:<14} | {memo}")
-        report.append("```")
-        
-        await msg.edit(content="\n".join(report))
-
-
+        try:
+            # ✨ 大絕招：給整個併發探測加上「絕對斬斷鎖」（8 秒後強制放棄，絕不卡死）
+            results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=8.0)
+            
+            # 繪製美觀的 Markdown 表格，改為逐行裝載以便計算長度
+            report_lines = []
+            report_lines.append(f"{'API 項目':<14} | {'狀態狀況':<14} | {'備註 / 剩餘資訊'}")
+            report_lines.append("-" * 55)
+            for name, status, memo in results:
+                report_lines.append(f"{name:<14} | {status:<14} | {memo}")
+            
+            # 將所有行組合成完整字串測試長度
+            test_full_text = "**🔮 【7L 全線 API 金鑰健康矩陣】**\n```markdown\n" + "\n".join(report_lines) + "\n```"
+            
+            # ✂️ 如果字數安全（少於 1900 字元），直接編輯原訊息送出
+            if len(test_full_text) <= 1900:
+                await msg.edit(content=test_full_text)
+            else:
+                # ⚠️ 如果超過 Discord 2000 字元限制，啟動分段發送協議
+                await msg.edit(content="**🔮 【7L 全線 API 金鑰健康矩陣】**\n*(⚠️ 探測完成！但因妳的金鑰數量太多，表格超過 Discord 長度限制，系統自動為妳分段顯示 👇)*")
+                
+                current_chunk = "```markdown\n"
+                for row in report_lines:
+                    # 如果目前的塊加上新的一行會超過 1850 字元（保留一點緩衝空間），就先送出目前的塊
+                    if len(current_chunk) + len(row) > 1850:
+                        current_chunk += "\n```"
+                        await ctx.send(current_chunk)
+                        current_chunk = "```markdown\n" + row + "\n"
+                    else:
+                        current_chunk += row + "\n"
+                
+                # 送出最後剩下沒發完的表格部分
+                if current_chunk.strip() != "```markdown":
+                    current_chunk += "```"
+                    await ctx.send(current_chunk)
+                    
+        except asyncio.TimeoutError:
+            # 🚑 發生卡死時的強制補救輸出
+            await msg.edit(content="⚠️ **API 探測超時 (Timeout)！**\n部分 API 伺服器無回應，為了防止系統癱瘓已強制中斷。")
+        except Exception as e:
+            # 攔截其他未知錯誤
+            await msg.edit(content=f"❌ **API 探測發生未知錯誤**：\n```\n{e}\n```")
 
 # ────────────────────────────────────────────────────────
 # 8. 🌐 虛擬網頁與啟動區塊
