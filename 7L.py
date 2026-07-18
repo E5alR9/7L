@@ -153,11 +153,9 @@ async def extract_video_frames(attachment, max_frames=4):
 # ────────────────────────────────────────────────────────
 # 🧠 動態大腦矩陣陣列與輪詢指標 (Round-Robin LLM)
 # ────────────────────────────────────────────────────────
-# 🎯 1. Groq 10 槽輪詢陣列與冷卻監獄
-GROQ_CLIENTS = [
-    ai_client_10, ai_client_9, ai_client_8, ai_client_7, ai_client_6, 
-    ai_client_5, ai_client_4, ai_client_3, ai_client_2, ai_client_1
-]
+# 🎯 1. Groq 無限槽輪詢陣列與冷卻監獄 (✨ 動態映射版)
+# 自動把前面生成的 ai_client_1 ~ ai_client_30 全部抓進來排隊
+GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
 current_groq_idx = 0
 GROQ_KEY_COOLDOWNS = {}  # 用來記錄 Groq 金鑰出獄時間
 
