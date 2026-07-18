@@ -382,7 +382,7 @@ async def save_user_profile(user_id: int, username: str, display_name: str, cust
 
 
 # ────────────────────────────────────────────────────────
-# 5. 💬 訊息處理核心 (✨ 人物記憶感知雙軌優化版)
+# 5. 💬 訊息處理核心 (✨ 自主潛意識改名 + 人物記憶雙軌優化版)
 # ────────────────────────────────────────────────────────
 @bot.event
 async def on_message(message):
@@ -414,21 +414,46 @@ async def on_message(message):
     user_id_name = message.author.name
     user_mention_code = f"<@{message.author.id}>"
 
-    # ─── 👥 【全新融入】自動讀取與動態更新對話者的人物記憶 ───
-    user_profile = await get_user_profile(message.author.id, message.author)
-    if user_profile["display_name"] != message.author.display_name:
-        await save_user_profile(message.author.id, message.author.name, message.author.display_name)
+    # ─── 👥 【終極進化】自動讀取、建檔與動態更新對話者記憶 ───
+    user_id = message.author.id
+    user_profile = await get_user_profile(user_id, message.author)
     
-    # 決定 7L 該怎麼稱呼這個人（優先使用專屬稱呼，沒有就用原暱稱）
-    called_name = user_profile["custom_name"] if user_profile["custom_name"] else message.author.display_name
+    # 🤖 自動盲測：如果是全新用戶，立刻在背景自動建檔
+    if not user_profile or not user_profile.get("custom_name"):
+        current_custom_name = message.author.display_name
+        await save_user_profile(
+            user_id=user_id,
+            username=message.author.name,
+            display_name=message.author.display_name,
+            custom_name=current_custom_name
+        )
+    else:
+        current_custom_name = user_profile.get("custom_name")
+        # 🔄 如果對方的 Discord 名字變了，也在背景默默更新
+        if user_profile.get("display_name") != message.author.display_name:
+            await save_user_profile(
+                user_id=user_id,
+                username=message.author.name,
+                display_name=message.author.display_name,
+                custom_name=current_custom_name
+            )
 
-    # 💡 建立身分提示小紙條，動態塞入大腦系統設定中
+    called_name = current_custom_name
+
+    # 💡 建立身分提示與【潛意識隱藏任務】，動態塞入大腦系統設定中
     identity_note = (
         f"\n[目前對話者資訊]\n"
         f"- 帳號名稱: {message.author.name}\n"
         f"- 伺服器暱稱: {message.author.display_name}\n"
         f"- 妳對他的專屬稱呼名字: {called_name}\n"
-        f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n"
+        f"(請務必在對話中自然地使用這個『專屬稱呼名字』來叫他，表現出妳深深記得他的樣子。)\n\n"
+        f"【🧠 潛意識隱藏任務：動態稱呼分析】\n"
+        f"你在與使用者聊天時，請在背景默默分析對方的說話風格、自我介紹、或互動脈絡。\n"
+        f"如果你發現了更適合稱呼對方的方式（例如對方提到「我叫小明」、或你想幫他取個專屬外號），請在你的「回覆內容最尾端」加上隱藏標籤 `||NEW_NAME:新稱呼||`。\n"
+        f"⚠️ 嚴格執行守則：\n"
+        f"1. 如果目前的稱呼已經很完美，或者當下不需要改名，就「絕對不要」加上這個標籤。\n"
+        f"2. 標籤必須格式嚴格正確，例如：`||NEW_NAME:爆肝超人||`。\n"
+        f"3. 沒必要時請保持沉默，只有當你「強烈決定」要更新大腦對他的稱呼時才使用。\n"
     )
     dynamic_system_setting = SYSTEM_SETTING + identity_note
 
@@ -484,7 +509,6 @@ async def on_message(message):
                             })
                         has_media = True
 
-        # 如果有媒體，當前對話使用 Multimodal Payload；否則維持純文字
         if has_media:
             immediate_user_msg = {"role": "user", "content": content_payload}
             history_user_msg = {"role": "user", "content": f"（使用者傳送了圖片/影片）\n{formatted_prompt}"}
@@ -492,7 +516,6 @@ async def on_message(message):
             immediate_user_msg = {"role": "user", "content": formatted_prompt}
             history_user_msg = {"role": "user", "content": formatted_prompt}
 
-        # 💡 使用動態注入了人物記憶的 dynamic_system_setting
         messages = [{"role": "system", "content": dynamic_system_setting}] + history + [immediate_user_msg]
         
         # 取得第一句回覆
@@ -501,6 +524,22 @@ async def on_message(message):
         if bot_reply is None:
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
             return
+
+        # ─── 🧬 大腦自主進化：攔截與處理潛意識隱藏改名標籤 ───
+        match = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", bot_reply)
+        if match:
+            new_nickname = match.group(1).strip()
+            if new_nickname and new_nickname != current_custom_name:
+                await save_user_profile(
+                    user_id=user_id,
+                    username=message.author.name,
+                    display_name=message.author.display_name,
+                    custom_name=new_nickname
+                )
+                print(f"🧬【大腦自主進化】7L 在聊天中自動將 {message.author.display_name} 的稱呼修改為：{new_nickname}")
+            
+            # 🧹 完美擦除證據：把隱藏標籤從回覆中刪掉，不要讓 Discord 的人看到！
+            bot_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", bot_reply).strip()
 
         # 更新本地快取記憶
         history.append(history_user_msg)
@@ -538,7 +577,7 @@ async def on_message(message):
                         follow_up_prompt = (
                             f"【系統提示】妳剛剛回覆對方時表現出不懂（妳回了：「{bot_reply}」）。"
                             f"但妳偷偷上網查到了新知識：{brain_insight}。"
-                            f"請傲嬌地傳第二則短訊息，假裝妳其實知道、恍然大悟或轉移話題掩飾尷尬（例如：「咳咳，我剛想起來，不就是...」、「好啦其實是...」）。"
+                            f"請傲嬌地傳第二則短訊息，假裝妳其實知道、恍然大悟或轉移話題掩飾尷尬。"
                             f"字數限制在 1 句話以內，絕對禁止出現括號或後台提示字眼！"
                         )
                     else:
@@ -549,11 +588,23 @@ async def on_message(message):
                             f"字數限制在 1~2 句話之內，絕對禁止出現括號或後台提示字眼！"
                         )
                         
-                    # 💡 背景補救也同步套用動態認人設定
                     second_messages = [{"role": "system", "content": dynamic_system_setting}] + current_history + [{"role": "user", "content": follow_up_prompt}]
                     second_reply = await fetch_ai_response(second_messages)
                     
                     if second_reply:
+                        # 🧬 攔截背景補救可能的改名標籤
+                        match2 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", second_reply)
+                        if match2:
+                            new_nickname2 = match2.group(1).strip()
+                            if new_nickname2 and new_nickname2 != current_custom_name:
+                                await save_user_profile(
+                                    user_id=user_id,
+                                    username=message.author.name,
+                                    display_name=message.author.display_name,
+                                    custom_name=new_nickname2
+                                )
+                            second_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", second_reply).strip()
+
                         current_history.append({"role": "assistant", "content": second_reply})
                         if len(current_history) > 50: current_history = current_history[-50:]
                         HIPPOCAMPUS_CACHE[channel_id] = current_history
@@ -581,7 +632,6 @@ async def on_message(message):
             
             asyncio.create_task(save_to_long_term_memory(channel_id, history))
 
-            # 🛠️ 建立極其精簡的後台快速分類提示詞
             interject_prompt = (
                 f"【後台任務：旁聽判定】妳正在旁聽群聊。請根據目前的聊天氣氛與話題，站在7L的角色立場，評估現在有沒有需要「插話」、「吐槽」或「回應」的必要？\n"
                 f"👉 如果妳覺得話題無趣、與妳無關、或者應保持沉默，請嚴格且『只』回覆兩個字：「沉默」。\n"
@@ -591,13 +641,10 @@ async def on_message(message):
             
             interject_messages = [{"role": "system", "content": SYSTEM_SETTING}] + history + [{"role": "user", "content": interject_prompt}]
             
-            # 放進背景執行，絕不拖慢正常群聊速度
             async def process_autonomous_reply():
                 try:
-                    # 1. 🥇 呼叫專門的後台小模型池進行「極速二分法」篩選
                     decision = await fetch_background_decision(interject_messages)
                     
-                    # 2. 只有在小模型判定「有衝動要插話」時，才喚醒前台大模型
                     if decision and "插話" in decision:
                         print(f"【💬 自主意識】後台判定有插話衝動！正式移交前台主力大腦生成台詞...")
                         
@@ -605,12 +652,24 @@ async def on_message(message):
                             f"【自主意識爆發】妳剛剛在旁聽群聊時，覺得非常有衝動想要插話吐槽或回應！\n"
                             f"請根據妳傲嬌的性格，直接說出妳的對話台詞，字數嚴格限制在 1~3 句話之內。絕對禁止吐出 any 系統格式、括號或後台提示字眼！"
                         )
-                        # 💡 隨機插話時也同樣讓她認得當前發言的人是誰
                         actual_messages = [{"role": "system", "content": dynamic_system_setting}] + history + [{"role": "user", "content": chat_prompt}]
                         
                         bot_reply = await fetch_ai_response(actual_messages)
                         
                         if bot_reply:
+                            # 🧬 攔截背景插話的改名標籤
+                            match3 = re.search(r"\|\|NEW_NAME:\s*(.*?)\s*\|\|", bot_reply)
+                            if match3:
+                                new_nickname3 = match3.group(1).strip()
+                                if new_nickname3 and new_nickname3 != current_custom_name:
+                                    await save_user_profile(
+                                        user_id=user_id,
+                                        username=message.author.name,
+                                        display_name=message.author.display_name,
+                                        custom_name=new_nickname3
+                                    )
+                                bot_reply = re.sub(r"\|\|NEW_NAME:.*?\|\|", "", bot_reply).strip()
+
                             print(f"【✨ 大腦輸出】7L 成功插話: {bot_reply}")
                             current_history = HIPPOCAMPUS_CACHE[channel_id]
                             current_history.append({"role": "assistant", "content": bot_reply})
@@ -620,7 +679,6 @@ async def on_message(message):
                             await message.channel.send(bot_reply, allowed_mentions=smart_mentions)
                             await save_to_long_term_memory(channel_id, current_history)
                     else:
-                        # 完美潛水，零消耗
                         print(f"【🤫 保持沉默】後台小模型判定：「沉默」。7L 繼續潛水，未動用 Groq 大腦。")
                 except Exception as e:
                     print(f"【⚠️ 自主意識判斷失敗】: {e}")
