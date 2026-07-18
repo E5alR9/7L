@@ -27,14 +27,23 @@ except ImportError:
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L") 
 
 # 👇 懶人大招：自動辨識「空格、換行、逗號、分號」來切割金鑰！
+# 💡 同時支援大小通吃：不論 .env 寫 XXX_KEY 還是 XXX_KEYS、XXX_API_KEY 都能完美通關！
 
 # 1. 捕捉 Gemini 金鑰陣列 (全面升級多槽輪詢完全體！)
-GEMINI_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEY", "")) if k.strip()]
+GEMINI_KEYS = [
+    k.strip() 
+    for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEYS") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEYS") or os.getenv("GEMINI_KEY") or "") 
+    if k.strip()
+]
 GEMINI_API_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None  # 保留單把供舊代碼或主視覺相容
 GEMINI_KEY_COOLDOWNS = {}  # ✨ 新增：Gemini 專屬 429 冷卻監獄
 
 # 2. 捕捉 Groq 金鑰陣列
-GROQ_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS", "")) if k.strip()]
+GROQ_KEYS = [
+    k.strip() 
+    for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS") or os.getenv("GROQ_API_KEY") or os.getenv("GROQ_KEYS") or os.getenv("GROQ_KEY") or "") 
+    if k.strip()
+]
 GROQ_CLIENTS = [globals()[f"ai_client_{i}"] for i in range(1, 31) if globals().get(f"ai_client_{i}")]
 current_groq_idx = 0
 
@@ -43,15 +52,22 @@ for i in range(1, 31):
     globals()[f"GROQ_API_KEY_{i}"] = GROQ_KEYS[i-1] if i <= len(GROQ_KEYS) else None
 
 # 3. 捕捉 Tavily 金鑰陣列 
-TAVILY_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("TAVILY_KEYS", "")) if k.strip()]
+TAVILY_KEYS = [
+    k.strip() 
+    for k in re.split(r'[\s,;]+', os.getenv("TAVILY_API_KEYS") or os.getenv("TAVILY_API_KEY") or os.getenv("TAVILY_KEYS") or os.getenv("TAVILY_KEY") or "") 
+    if k.strip()
+]
 current_explicit_idx = len(TAVILY_KEYS) - 1 if TAVILY_KEYS else 0  # 即時搜：從最後一個開始
 current_background_idx = 0
 
-# 4. 🎯 修正對接：把 OpenRouter 統一集中到最頂端管理！(避免與中段 198 行衝突)
-OPENROUTER_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEY", "")) if k.strip()]
+# 4. 🎯 修正對接：把 OpenRouter 統一集中到最頂端管理！
+OPENROUTER_KEYS = [
+    k.strip() 
+    for k in re.split(r'[\s,;]+', os.getenv("OPENROUTER_API_KEYS") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_KEYS") or os.getenv("OPENROUTER_KEY") or "") 
+    if k.strip()
+]
 current_or_idx = 0
 OPENROUTER_KEY_COOLDOWNS = {}
-
 
 # ✨ Firebase 環境變數
 FIREBASE_CRED_JSON = os.getenv("FIREBASE_CRED_JSON")
