@@ -1140,21 +1140,7 @@ def run_backup_server():
     server = HTTPServer(('0.0.0.0', port), DummyServer)
     server.serve_forever()
 
-if __name__ == "__main__":
-    server_thread = threading.Thread(target=run_backup_server)
-    server_thread.daemon = True
-    server_thread.start()
-    print("【🌐 系統通知】虛擬網頁伺服器已在背景啟動！")
-
-    if DISCORD_TOKEN:
-        bot.run(DISCORD_TOKEN)
-    else:
-        print("【錯誤】找不到 DISCORD_TOKEN_7L，請確認環境變數是否設定正確！")
-
-
-# ────────────────────────────────────────────────────────
-# 🚀 程式執行入口 (確保 bot.run 一定放在整份檔案的最後一行)
-# ────────────────────────────────────────────────────────
+# 🚀 程式執行入口 (確保 bot.run 只有一個，且放在整份檔案的最後一行)
 if __name__ == "__main__":
     server_thread = threading.Thread(target=run_backup_server)
     server_thread.daemon = True
