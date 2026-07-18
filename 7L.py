@@ -1018,7 +1018,7 @@ async def search_internet_meme(query, is_explicit=True):
 
 # --- 📊 API 金鑰即時健康檢查矩陣 ---
 @bot.command(name="api")
-@commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
+# @commands.is_owner()  # ✨ 限制只有身為機器人擁有者的妳能查，防止路人偷看金鑰狀態
 async def check_all_apis(ctx):
     msg = await ctx.send("🔍 正在同步探測全線 API 金鑰矩陣，並檢查冷卻監獄狀況...")
     
