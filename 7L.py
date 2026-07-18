@@ -28,9 +28,10 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_7L")
 
 # 👇 懶人大招：自動辨識「空格、換行、逗號、分號」來切割金鑰！
 
-# 1. 捕捉 Gemini 金鑰陣列 (支援未來擴充，並安全提取第一把供主視覺與基礎呼叫)
-_raw_gemini = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEY", "")) if k.strip()]
-GEMINI_API_KEY = _raw_gemini[0] if _raw_gemini else None
+# 1. 捕捉 Gemini 金鑰陣列 (全面升級多槽輪詢完全體！)
+GEMINI_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GEMINI_API_KEY", "")) if k.strip()]
+GEMINI_API_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None  # 保留單把供舊代碼或主視覺相容
+GEMINI_KEY_COOLDOWNS = {}  # ✨ 新增：Gemini 專屬 429 冷卻監獄
 
 # 2. 捕捉 Groq 金鑰陣列
 GROQ_KEYS = [k.strip() for k in re.split(r'[\s,;]+', os.getenv("GROQ_API_KEYS", "")) if k.strip()]
@@ -717,6 +718,7 @@ async def on_message(message):
 async def fetch_ai_response(messages, require_vision=False): 
     global current_groq_idx, GROQ_KEY_COOLDOWNS
     global current_or_idx, OPENROUTER_KEY_COOLDOWNS
+    global GEMINI_KEY_COOLDOWNS  
     
     # ─── 🕒 動態注入現實時間 ───
     try:
@@ -732,7 +734,7 @@ async def fetch_ai_response(messages, require_vision=False):
 
     current_time = time.time()
     
-    # ⚡ 動態過濾：Groq 監獄初始檢查 (💡 修正：對應 1~N 無限擴充槽)
+    # ⚡ 動態過濾：Groq 監獄初始檢查
     available_clients = []
     for i, client in enumerate(GROQ_CLIENTS):
         key_index = i + 1  
@@ -768,34 +770,41 @@ async def fetch_ai_response(messages, require_vision=False):
         ordered_or_keys = [available_or_keys[(start_or_idx + j) % len(available_or_keys)] for j in range(len(available_or_keys))]
     else:
         ordered_or_keys = []
+
+    # ⚡ 動態過濾：Gemini 監獄初始檢查
+    available_gemini_keys = []
+    for i, key in enumerate(GEMINI_KEYS):
+        if i in GEMINI_KEY_COOLDOWNS:
+            if current_time >= GEMINI_KEY_COOLDOWNS[i]:
+                print(f"【🟢 出獄通知】第 {i+1} 組 Gemini 金鑰已過冷卻期，重新歸隊！")
+                del GEMINI_KEY_COOLDOWNS[i]
+                if key: available_gemini_keys.append((i, key))
+        else:
+            if key: available_gemini_keys.append((i, key))
+
+    ordered_gemini_keys = available_gemini_keys
         
+    if not ordered_gemini_keys and GEMINI_KEYS:
+        print("【🚨 Gemini 大赦】所有 Gemini 金鑰皆在冷卻中，強制啟動集體釋放防當機制！")
+        ordered_gemini_keys = list(enumerate(GEMINI_KEYS))
+    
     # 🧠 動態產生混合大腦模型池
     DYNAMIC_MODEL_POOLS = []
     
-    # 🌟 【第一梯隊：頂級大腦】 (嚴格限定 70B~120B，執行 2-4-1-3 戰術序列)
-    
-    # [1] 選：Groq Llama 3.3 70B 速度款大腦
+    # 🌟 【第一梯隊：頂級大腦】
     for client in ordered_clients: 
         DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
-    
-    # [2] 選：OpenRouter Llama 3.3 70B 免費版備援
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
-
-    # [3] 選：Groq 120B 頂配大腦
     for client in ordered_clients: 
         DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
-    
-    # [4] 選：OpenRouter Qwen 72B 免費版強大防線
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
         
     # 🧱 【第二梯隊：小模型與最後防線】
-    # 💡 基礎 Gemini（眼角膜與視覺核心，獨立於 Groq 之外不吃其額度）
-    DYNAMIC_MODEL_POOLS.extend([
-        {"provider": "gemini", "model": "gemini-1.5-flash", "vision": True},
-        {"provider": "gemini", "model": "gemini-1.5-flash"}
-    ])
+    for idx, key in ordered_gemini_keys:
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-1.5-flash", "vision": True})
+        DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-1.5-flash"})
 
     # 💡 OpenRouter 100% 全免費高強度小模型矩陣防線
     for idx, key in ordered_or_keys: 
@@ -818,14 +827,16 @@ async def fetch_ai_response(messages, require_vision=False):
         
         loop_now = time.time()
         if provider == "groq" and target_client:
-            k_idx = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
-            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]:
-                continue
+            k_idx = GROQ_CLIENTS.index(target_client) + 1  
+            if k_idx in GROQ_KEY_COOLDOWNS and loop_now < GROQ_KEY_COOLDOWNS[k_idx]: continue
         
         if provider == "openrouter":
             or_idx = item.get("key_idx")
-            if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]:
-                continue
+            if or_idx in OPENROUTER_KEY_COOLDOWNS and loop_now < OPENROUTER_KEY_COOLDOWNS[or_idx]: continue
+
+        if provider == "gemini":
+            g_idx = item.get("key_idx")
+            if g_idx in GEMINI_KEY_COOLDOWNS and loop_now < GEMINI_KEY_COOLDOWNS[g_idx]: continue
 
         if require_vision and not is_vision_model: continue  
         if not require_vision and is_vision_model: continue  
@@ -844,22 +855,29 @@ async def fetch_ai_response(messages, require_vision=False):
 
         try:
             if provider == "groq":
-                key_index = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
+                key_index = GROQ_CLIENTS.index(target_client) + 1  
                 print(f"【🧠 嘗試】使用 Groq {model_name} (第 {key_index} 組金鑰)...")
                 chat_completion = await target_client.chat.completions.create(messages=current_messages, model=model_name)
                 return chat_completion.choices[0].message.content
                 
-            elif provider == "gemini" and GEMINI_API_KEY:
-                print(f"【🧠 嘗試】使用 Gemini 模型 {model_name}...")
+            elif provider == "gemini":
+                target_key = item.get("key")
+                g_idx = item.get("key_idx")
+                if not target_key: continue
+                
+                print(f"【🧠 嘗試】使用 Gemini 模型 {model_name} (第 {g_idx+1} 組金鑰)...")
                 url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+                headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
                         else:
-                            raise Exception(f"Gemini HTTP {resp.status}")
+                            # ✨ 升級 1：動態抽取伺服器給的官方冷卻標頭
+                            retry_after = resp.headers.get("Retry-After", "")
+                            error_text = await resp.text()
+                            raise Exception(f"Gemini HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
                             
             elif provider == "openrouter":
                 target_key = item.get("key")
@@ -875,15 +893,25 @@ async def fetch_ai_response(messages, require_vision=False):
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
                         else:
+                            # ✨ 升級 2：動態抽取伺服器給的官方冷卻標頭
+                            retry_after = resp.headers.get("Retry-After", "")
                             error_text = await resp.text()
-                            raise Exception(f"HTTP {resp.status}: {error_text}")
+                            raise Exception(f"OpenRouter HTTP {resp.status} [Retry-After: {retry_after}]: {error_text}")
                             
         except Exception as e:
             error_msg = str(e)
             print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
-            if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
-                key_index = GROQ_CLIENTS.index(target_client) + 1  # 💡 修正
+            # ─── 🛠️ 萬用全動態冷卻時間解析核心 ───
+            total_seconds = 60.0  # 保險預設值
+            
+            # A 招：優先解析我們手動攔截注入的 [Retry-After: X]
+            retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
+            if retry_match and retry_match.group(1).strip():
+                try: total_seconds = float(retry_match.group(1))
+                except: pass
+            else:
+                # B 招：Groq 標準格式 (try again in 1h2m3s)
                 match = re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([0-9.]+)s', error_msg)
                 if match:
                     hours = int(match.group(1)) if match.group(1) else 0
@@ -891,21 +919,31 @@ async def fetch_ai_response(messages, require_vision=False):
                     seconds = float(match.group(3)) if match.group(3) else 0.0
                     total_seconds = hours * 3600 + minutes * 60 + seconds
                 else:
-                    total_seconds = 60
-                
-                total_seconds = max(5.0, total_seconds + 5)
+                    # C 招：盲掃模糊格式 (例如 JSON 裡面的 "wait 30 seconds" 或 "retry after 15s")
+                    match_sec = re.search(r'(?:retry after|wait|in)\s+([0-9.]+)\s*(?:s|sec|second|seconds)', error_msg.lower())
+                    if match_sec:
+                        try: total_seconds = float(match_sec.group(1))
+                        except: pass
+            
+            # ✨ 安全防線：加上 5 秒安全墊片，防伺服器時間誤差，且最少蹲 5 秒
+            total_seconds = max(5.0, total_seconds + 5)
+            
+            # ─── 🗂️ 根據不同 Provider 動態封印 ───
+            if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
+                key_index = GROQ_CLIENTS.index(target_client) + 1  
                 GROQ_KEY_COOLDOWNS[key_index] = time.time() + total_seconds
-                
-                if total_seconds > 60:
-                    print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds/60:.1f} 分鐘。")
-                else:
-                    print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準封印 {total_seconds:.1f} 秒。")
+                print(f"【🛑 封印金鑰】第 {key_index} 組 Groq 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
 
             elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
                 key_idx = item.get("key_idx")
-                cooldown_sec = 60  
-                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + cooldown_sec
-                print(f"【🛑 封印金鑰】第 {key_idx+1} 組 OpenRouter 觸發上限，精準封印 {cooldown_sec} 秒。")
+                OPENROUTER_KEY_COOLDOWNS[key_idx] = time.time() + total_seconds
+                print(f"【🛑 封印金鑰】第 {key_idx+1} 組 OpenRouter 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+
+            elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower()):
+                g_idx = item.get("key_idx")
+                if g_idx is not None:
+                    GEMINI_KEY_COOLDOWNS[g_idx] = time.time() + total_seconds
+                    print(f"【🛑 封印金鑰】第 {g_idx+1} 組 Gemini 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
 
             continue 
 
