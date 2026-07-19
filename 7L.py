@@ -824,15 +824,36 @@ async def on_message(message):
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
-        # 🌐 判斷是否「主動」要求查詢
+        # 🌐 判斷是否「主動」要求查詢 (改用 AI 意圖分析)
         search_task = None
         is_explicit_search = False
-        search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下"]
         
-        if user_prompt.strip() and any(kw in user_prompt for kw in search_keywords):
-            print(f"【🌐 即時探針】heard 搜尋指令！7L 正在調查：{user_prompt}")
-            search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
-            is_explicit_search = True
+        if user_prompt.strip():
+            # 建立給後台小模型的意圖分析提示詞
+            search_intent_prompt = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一個意圖分析器。請判斷使用者的這句話，是否暗示他要求你『去網路上搜尋』、『查資料』、『解釋某個他不認識的名詞』？\n"
+                        "如果是，請只回答 'YES'；如果沒有這個意圖，請只回答 'NO'。絕對不要解釋。"
+                    )
+                },
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            try:
+                # 瞬間調用後台模型池判定
+                search_decision = await fetch_background_decision(search_intent_prompt)
+                if search_decision and "YES" in search_decision.upper():
+                    print(f"【🌐 AI 意圖探針】判定使用者需要查資料！啟動搜尋...")
+                    search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
+                    is_explicit_search = True
+            except Exception as e:
+                # 🛡️ 斷網保底：退回傳統關鍵字
+                search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下", "google"]
+                if any(kw in user_prompt for kw in search_keywords):
+                    search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
+                    is_explicit_search = True
 
         formatted_prompt = (
             f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
@@ -950,10 +971,31 @@ async def on_message(message):
             await message.channel.send(ai_next_sentence, allowed_mentions=smart_mentions)
             await save_to_long_term_memory(channel_id, current_history)
 
-        # ─── ⚡ 不懂裝懂的智慧背景開智 ───
-        confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
-        is_confused = any(kw in bot_reply for kw in confusion_keywords)
-
+        # ─── ⚡ 不懂裝懂的智慧背景開智 (改用 AI 意圖分析) ───
+        is_confused = False
+        if bot_reply:
+            confused_intent_prompt = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一個意圖分析器。以下是 AI 機器人剛剛做出的回覆。\n"
+                        "請判斷這段回覆是否表現出『不知道』、『不懂』、『沒聽過』、『疑惑』或『缺乏相關知識』？\n"
+                        "如果是，請只回答 'YES'；如果他表現得很清楚知道，請只回答 'NO'。"
+                    )
+                },
+                {"role": "user", "content": bot_reply}
+            ]
+            
+            try:
+                confused_decision = await fetch_background_decision(confused_intent_prompt)
+                if confused_decision and "YES" in confused_decision.upper():
+                    is_confused = True
+                    print(f"【🧠 AI 開智判定】發現 7L 剛剛的回覆表現出不懂，啟動背景補救！")
+            except Exception:
+                # 🛡️ 斷網保底：退回傳統關鍵字
+                confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
+                is_confused = any(kw in bot_reply for kw in confusion_keywords)
+                
         # 💡 優化（🤖 核心優化 7：只有當對方是真人時，才跑原本的背景探針補救，防範機器人聊天起衝突）
         if not message.author.bot and not ai_next_sentence and (is_explicit_search or is_confused):
             if is_confused and not is_explicit_search:
