@@ -1264,14 +1264,14 @@ async def fetch_background_decision(messages):
     for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "deepseek/deepseek-chat-v3:free"})
     for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.2-3b-instruct:free"})
     for idx, key in ordered_or_keys: BACKGROUND_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"})
-
-    # 🚀 【第二梯隊：Groq 火力全開極速防線】
-    for client in ordered_clients: 
-        BACKGROUND_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
-
-    # 🧱 【第三梯隊：Gemini 全免費高效率輕量矩陣】
+    
+    # 🧱 【第二梯隊：Gemini 全免費高效率輕量矩陣】
     for idx, key in ordered_gemini_keys: BACKGROUND_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-3.1-flash-lite"})
     for idx, key in ordered_gemini_keys: BACKGROUND_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-2.5-flash-lite"})
+   
+    # 🚀 【第三梯隊：Groq 火力全開極速防線】
+    for client in ordered_clients: 
+        BACKGROUND_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
 
     # 巡航調用模型
     for item in BACKGROUND_POOLS:
