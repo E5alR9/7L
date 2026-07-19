@@ -1950,7 +1950,7 @@ async def check_all_apis(ctx):
             await msg.edit(content=f"❌ **API 探測發生未知錯誤**：\n```python\n{safe_error}\n```")
 
 # ────────────────────────────────────────────────────────
-# 🛑 專屬指令：持有者遠端安全關閉機器人
+# 🛑 專屬指令：
 # ────────────────────────────────────────────────────────
 @bot.command(name="sleep", help="【僅限持有者】安全關閉機器人")
 @commands.is_owner()
@@ -1964,7 +1964,63 @@ async def stop(ctx):
     # 關閉與 Discord 網關的連線
     await bot.close()
     os._exit(0)
+
+@bot.command(name="clear", help="【僅限持有者】刪除當前頻道的雲端與本地記憶")
+@commands.is_owner()
+async def clear_memory(ctx):
+    """清除當前頻道的所有對話紀錄與雲端記憶標籤"""
+    channel_id = ctx.channel.id
+    print(f"【🧹 核心指令】持有者 {ctx.author} 觸發了清除記憶指令！正在清理頻道 {channel_id} 的資料...")
     
+    # 1. 瞬間抹除本地海馬回 (RAM) 快取
+    if channel_id in HIPPOCAMPUS_CACHE:
+        del HIPPOCAMPUS_CACHE[channel_id]
+        
+    # 2. 徹底刪除 Firebase 雲端資料
+    if db is not None:
+        try:
+            # 刪除該頻道的原始對話紀錄
+            await db.collection("channel_history").document(str(channel_id)).delete()
+            
+            # 刪除該頻道的潛意識核心標籤
+            await db.collection("channel_meta").document(str(channel_id)).delete()
+            
+            # 刪除該頻道的潛意識核心標籤
+            await db.collection("channel_meta").document(str(channel_id)).delete()
+            
+            # ─── 🧠 動態生成失憶台詞 ───
+            amnesia_prompt = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一個傲嬌的 AI 少女，剛剛你的『當前頻道記憶』被管理員強制清除了。"
+                        "請用簡短的 1 到 2 句話，表現出突然斷片、茫然或傲嬌的疑惑感。"
+                        "例如類似『啊？我們剛剛說到哪了？』或『奇怪，我的記憶怎麼好像少了一塊……算了，不重要！』的感覺。"
+                        "請直接輸出台詞，不要包含任何額外的解釋或引號。"
+                    )
+                }
+            ]
+            
+            try:
+                # 讓後台小模型瞬間生出一句失憶台詞
+                ai_reply = await fetch_background_decision(amnesia_prompt)
+                if not ai_reply or len(ai_reply) < 2:
+                    raise ValueError("生成失敗")
+            except Exception as e:
+                print(f"【⚠️ 動態台詞生成失敗】退回預設台詞，錯誤: {e}")
+                # 斷網或 API 異常時的保底台詞
+                ai_reply = "（揉揉眼睛）……咦？奇怪，剛剛是不是斷片了？……算了！"
+                
+            # 發送 AI 剛剛即興想出來的失憶反應
+            await ctx.send(ai_reply)
+            
+            print(f"【🗑️ 清理完成】已成功摧毀頻道 {channel_id} 的雲端與本地記憶。")
+        except Exception as e:
+            await ctx.send("⚠️ 嘖……雲端伺服器好像有點卡住，刪除失敗了。")
+            print(f"【⚠️ 清理失敗】無法刪除 Firebase 資料: {e}")
+    else:
+        # 如果是本地無資料庫模式的防呆
+        await ctx.send("啊！我的記憶呢")
 
 # ────────────────────────────────────────────────────────
 # 10 🌐 虛擬網頁與啟動區塊
