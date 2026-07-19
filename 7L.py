@@ -135,14 +135,43 @@ async def fetch_from_long_term_memory(channel_id, current_user_msg=""):
                 if summary_tags:
                     history.append({"role": "system", "content": f"【潛意識核心記憶標籤】：{summary_tags}"})
 
-            # 2. 🧠 心理學線索分析：判定使用者當下這句話，是否需要觸發「深層回憶」
-            msg_lower = current_user_msg.lower() if current_user_msg else ""
+            # 2. 🧠 動態意圖分析 (AI Router)：讓後台混合模型池自行判斷是否需要翻閱雲端日記
+            msg_lower = current_user_msg.strip() if current_user_msg else ""
             if msg_lower:
-                # (A) 懷舊感官詞庫：只要使用者提到這些詞，代表在探尋過去
-                nostalgia_triggers = ["上次", "之前", "那天", "記得", "回憶", "日記", "歷史", "過去", "前天", "昨天"]
-                if any(trigger in msg_lower for trigger in nostalgia_triggers):
-                    need_deep_recall = True
-                    print(f"【💡 記憶觸發】使用者提及懷舊詞彙 '{[t for t in nostalgia_triggers if t in msg_lower]}', 啟動深層記憶檢索。")
+                # 預設為不需要深層回憶
+                need_deep_recall = False
+                
+                # 建立給「記憶守門員」的極簡提示詞
+                router_prompt = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是一個大腦潛意識的意圖分析器。"
+                            "請判斷使用者的這句話，是否暗示他想回憶過去、詢問以前發生的事、或是延續以前（非當下）的話題？\n"
+                            "如果是，請回答 'YES'；如果只是當下的閒聊，請回答 'NO'。"
+                            "請只輸出 YES 或 NO，絕對不要解釋。"
+                        )
+                    },
+                    {"role": "user", "content": msg_lower}
+                ]
+                
+                try:
+                    # ⚡ 直接呼叫最強大的後台三軌混合模型池 (OpenRouter -> Groq -> Gemini)
+                    # 它會自動尋找當下活著且最快的免費模型來做判定
+                    decision = await fetch_background_decision(router_prompt)
+                    
+                    if decision and "YES" in decision.upper():
+                        need_deep_recall = True
+                        print(f"【🧠 AI 記憶觸發】後台意圖分析器判定需要深層回憶！判定結果: {decision}")
+                    else:
+                        print(f"【🧠 AI 記憶判定】只是當下閒聊，跳過下載雲端日記。判定結果: {decision}")
+                        
+                except Exception as e:
+                    # 🛡️ 天災保底：如果連三軌備援的幾十個模型全數崩潰，無縫切換回傳統字串比對
+                    print(f"【⚠️ AI 記憶路由崩潰】退回傳統關鍵字保底，錯誤: {e}")
+                    nostalgia_triggers = ["上次", "之前", "那天", "記得", "回憶", "日記", "歷史", "過去", "前天", "昨天"]
+                    if any(trigger in msg_lower for trigger in nostalgia_triggers):
+                        need_deep_recall = True
                 
                 # (B) 標籤動態命中：如果使用者講的話，跟大腦索引標籤裡的關鍵字重疊了
                 if not need_deep_recall and summary_tags:
@@ -1497,7 +1526,7 @@ async def fetch_ai_response(messages, require_vision=False):
             print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
             
             total_seconds = 60.0  # 保險預設值
-            
+                                                                # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             retry_match = re.search(r'\[Retry-After:\s*([0-9.]+)\]', error_msg)
             if retry_match and retry_match.group(1).strip():
                 try: total_seconds = float(retry_match.group(1))
@@ -1528,8 +1557,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 lock_key = f"{key_idx}_{model_name}"
                 OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
                 print(f"【🛑 精準封印】第 {key_idx+1} 組 OpenRouter 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
-
-                                                    # 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                
             elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower()):
                 g_idx = item.get("key_idx")
                 if g_idx is not None:
