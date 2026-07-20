@@ -1898,10 +1898,7 @@ async def clear_memory(ctx):
             # 刪除該頻道的潛意識核心標籤
             await db.collection("channel_meta").document(str(channel_id)).delete()
             
-            # 刪除該頻道的潛意識核心標籤
-            await db.collection("channel_meta").document(str(channel_id)).delete()
-            
-            # ─── 🧠 動態生成失憶台詞 ───
+            # ─── 🧠 動態生成失憶台詞 (調用前台主力大腦) ───
             amnesia_prompt = [
                 {
                     "role": "system",
@@ -1911,17 +1908,23 @@ async def clear_memory(ctx):
                         "例如類似『啊？我們剛剛說到哪了？』或『奇怪，我的記憶怎麼好像少了一塊……算了，不重要！』的感覺。"
                         "請直接輸出台詞，不要包含任何額外的解釋或引號。"
                     )
+                },
+                {
+                    "role": "user",
+                    "content": "【系統提示：你的短期記憶剛剛已被強制清除，請立刻做出反應】"
                 }
             ]
             
             try:
-                # 讓後台小模型瞬間生出一句失憶台詞
-                ai_reply = await fetch_background_decision(amnesia_prompt)
+                # 🚀 關鍵修改 1：改為呼叫前台生成函數 (請確認妳前台的函數名稱是否為 fetch_ai_response)
+                # 🚀 關鍵修改 2：加上了 user 提示詞，徹底防止英文 prompt 外洩與跳針迴圈
+                ai_reply = await fetch_ai_response(amnesia_prompt) 
+                
                 if not ai_reply or len(ai_reply) < 2:
-                    raise ValueError("生成失敗")
+                    raise ValueError("前台生成失敗")
             except Exception as e:
-                print(f"【⚠️ 動態台詞生成失敗】退回預設台詞，錯誤: {e}")
-                # 斷網或 API 異常時的保底台詞
+                print(f"【⚠️ 前台動態台詞生成失敗】退回預設保底台詞，錯誤: {e}")
+                # 斷網或前台 API 異常時的物理保底台詞
                 ai_reply = "（揉揉眼睛）……咦？奇怪，剛剛是不是斷片了？……算了！"
                 
             # 發送 AI 剛剛即興想出來的失憶反應
