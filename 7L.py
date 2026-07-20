@@ -403,7 +403,7 @@ def clean_bot_reply_tags(reply_str: str) -> str:
 # ────────────────────────────────────────────────────────
 @tasks.loop(minutes=30)
 async def auto_chat_loop():
-    random_sleep = random.randint(300, 900)
+    random_sleep = random.randint(1, 900)
     await asyncio.sleep(random_sleep)
 
     if random.random() > 0.4:
@@ -838,7 +838,7 @@ async def on_message(message):
         # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話 ───
         if ai_next_sentence and not message.author.bot:
             print(f"【✨ 自由連發】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence}")
-            await asyncio.sleep(1.8) 
+             
             
             current_history = HIPPOCAMPUS_CACHE.get(channel_id, live_history)
             current_history.append({"role": "assistant", "content": ai_next_sentence})
@@ -1078,7 +1078,7 @@ async def on_message(message):
                             # ✨ 執行插話時的自由意志連發：追加打字延遲與快取同步
                             if ai_next_sentence3:
                                 print(f"【✨ 自由連發-插話】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence3}")
-                                await asyncio.sleep(1.8)  # ⏳ 貼心模擬 1.8 秒的打字延遲
+                                
                                 
                                 current_history = HIPPOCAMPUS_CACHE.get(channel_id, final_history)
                                 current_history.append({"role": "assistant", "content": ai_next_sentence3})
