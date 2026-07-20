@@ -114,115 +114,27 @@ else:
 
 
 # ────────────────────────────────────────────────────────
-# 💾 雲端長存記憶（Firebase 線索觸發、選擇性下載架構）
+# 💾 雲端長存記憶（極速讀取：0.1秒內提取皮質標籤與短期記憶）
 # ────────────────────────────────────────────────────────
 async def fetch_from_long_term_memory(channel_id, current_user_msg=""):
     if db is not None:
         try:
             history = []
-            need_deep_recall = False  # 預設為不需要深層回憶
             
-            # 1. 🔍 永遠先掃描最輕量的「目錄/標籤」層 (這就像人類大腦皮質的快速索引)
+            # 1. 🔍 永遠先掃描最輕量的「目錄/標籤」層 (就像人類大腦皮質的快速索引)
             meta_ref = db.collection("channel_meta").document(str(channel_id))
             meta_doc = await meta_ref.get()
             
-            summary_tags = ""
             if meta_doc.exists:
                 meta_data = meta_doc.to_dict()
                 summary_tags = meta_data.get("summary_tags", "").strip()
-                
                 # 即使不下載日記，標籤也可以當作極輕量的潛意識背景
                 if summary_tags:
                     history.append({"role": "system", "content": f"【潛意識核心記憶標籤】：{summary_tags}"})
 
-            # 2. 🧠 動態意圖分析 (AI Router)：讓後台混合模型池自行判斷是否需要翻閱雲端日記
-            msg_lower = current_user_msg.strip() if current_user_msg else ""
-            if msg_lower:
-                # 預設為不需要深層回憶
-                need_deep_recall = False
-                
-                # 建立給「記憶守門員」的極簡提示詞
-                router_prompt = [
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是一個大腦潛意識的意圖分析器。"
-                            "請判斷使用者的這句話，是否暗示他想回憶過去、詢問以前發生的事、或是延續以前（非當下）的話題？\n"
-                            "如果是，請回答 'YES'；如果只是當下的閒聊，請回答 'NO'。"
-                            "請只輸出 YES 或 NO，絕對不要解釋。"
-                        )
-                    },
-                    {"role": "user", "content": msg_lower}
-                ]
-                
-                try:
-                    # ⚡ 直接呼叫最強大的後台三軌混合模型池 (OpenRouter -> Groq -> Gemini)
-                    # 它會自動尋找當下活著且最快的免費模型來做判定
-                    decision = await fetch_background_decision(router_prompt)
-                    
-                    if decision and "YES" in decision.upper():
-                        need_deep_recall = True
-                        print(f"【🧠 AI 記憶觸發】後台意圖分析器判定需要深層回憶！判定結果: {decision}")
-                    else:
-                        print(f"【🧠 AI 記憶判定】只是當下閒聊，跳過下載雲端日記。判定結果: {decision}")
-                        
-                except Exception as e:
-                    # 🛡️ 天災保底：如果連三軌備援的幾十個模型全數崩潰，無縫切換回傳統字串比對
-                    print(f"【⚠️ AI 記憶路由崩潰】退回傳統關鍵字保底，錯誤: {e}")
-                    nostalgia_triggers = ["上次", "之前", "那天", "記得", "回憶", "日記", "歷史", "過去", "前天", "昨天"]
-                    if any(trigger in msg_lower for trigger in nostalgia_triggers):
-                        need_deep_recall = True
-                
-                # (B) 標籤動態命中：如果使用者講的話，跟大腦索引標籤裡的關鍵字重疊了
-                if not need_deep_recall and summary_tags:
-                    # 將標籤切開（假設是用空格、逗號或頓號隔開），檢查是否有字眼出現在對話中
-                    tag_list = [t.strip() for t in re.split(r'[\s,，、#]+', summary_tags) if len(t.strip()) > 1]
-                    # ✨ 修正 Bug 1：將 tag 轉為小寫再進行比對，防止因大小寫不一致而無法命中
-                    matched_tags = [tag for tag in tag_list if tag.lower() in msg_lower]
-                    if matched_tags:
-                        need_deep_recall = True
-                        print(f"【💡 標籤命中】使用者話題命中記憶標籤 {matched_tags}, 喚醒相關深層日記。")
+            # 💡 (原本的 AI 意圖分析與深層日記下載，已經移到 on_message 的 background_deep_thinking 中獨立運作了！)
 
-            # 3. 📓 選擇性下載：只有被觸發時，才去下載對應日期的「濃縮日記」
-            if need_deep_recall:
-                from datetime import timedelta  # 💡 區域導入，確保日期計算模組安全可用
-                tz = ZoneInfo("Asia/Taipei")
-                now = datetime.now(tz)
-                
-                # ✨ 修正 Bug 2：動態決定要調閱的歷史日期，徹底解決原本「無論如何都只抓今天日記」的漏洞
-                dates_to_fetch = []
-                if "昨天" in msg_lower:
-                    dates_to_fetch.append((now - timedelta(days=1)).strftime("%Y-%m-%d"))
-                elif "前天" in msg_lower:
-                    dates_to_fetch.append((now - timedelta(days=2)).strftime("%Y-%m-%d"))
-                else:
-                    # 其他模糊詞彙（如：上次、之前、記得）或標籤命中，同時抓取今天與昨天，建立連續的記憶脈絡
-                    dates_to_fetch.append(now.strftime("%Y-%m-%d"))
-                    dates_to_fetch.append((now - timedelta(days=1)).strftime("%Y-%m-%d"))
-                
-                # 去重並排序（由舊到新排序，最符合 LLM 理解時間軸的邏輯）
-                dates_to_fetch = sorted(list(set(dates_to_fetch)))
-                
-                compiled_diaries = []
-                for d_str in dates_to_fetch:
-                    diary_ref = db.collection("daily_diary").document(d_str)
-                    diary_doc = await diary_ref.get()
-                    if diary_doc.exists:
-                        diary_data = diary_doc.to_dict()
-                        channel_diary = diary_data.get("summaries", {}).get(str(channel_id), "")
-                        if channel_diary:
-                            compiled_diaries.append(f"[{d_str}] {channel_diary}")
-                
-                if compiled_diaries:
-                    diary_content = "\n".join(compiled_diaries)
-                    # 🎯 這裡寫入的是 【妳被喚醒的核心歷史日記記憶】
-                    history.append({"role": "system", "content": f"【妳被喚醒的核心歷史日記記憶】:\n{diary_content}"})
-                    print(f"【📥 記憶讀取】成功精準加載頻道 {channel_id} 的歷史濃縮日記：{dates_to_fetch}")
-            else:
-                # 沒被觸發時，大腦保持輕量狀態
-                print(f"【🍃 輕量運作】話題屬於當下寒暄，跳過日記下載，節省資源。")
-
-            # 4. 📥 永遠讀取「最近 15 筆對話原文」(接續當下話題必備)
+            # 2. 📥 永遠讀取「最近 15 筆對話原文」(接續當下話題必備)
             doc_ref = db.collection("channel_history").document(str(channel_id))
             doc = await doc_ref.get()
             if doc.exists:
@@ -809,7 +721,7 @@ async def on_message(message):
 
     # ── 情況 A：有人標記或回覆 Bot（前台主力聊天，直接調用大腦） ──
     if should_trigger:
-        # 💡 【主力大腦被叫醒】此時才動態去讀取/翻查歷史記憶
+        # 💡 【主力大腦被叫醒】此時動態去讀取/翻查歷史記憶 (極速版)
         history = await get_brain_memory()
 
         # 重新整理 user_prompt 的內容
@@ -824,37 +736,6 @@ async def on_message(message):
             await message.channel.send("找我嗎~？", allowed_mentions=smart_mentions)
             return
 
-        # 🌐 判斷是否「主動」要求查詢 (改用 AI 意圖分析)
-        search_task = None
-        is_explicit_search = False
-        
-        if user_prompt.strip():
-            # 建立給後台小模型的意圖分析提示詞
-            search_intent_prompt = [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一個意圖分析器。請判斷使用者的這句話，是否暗示他要求你『去網路上搜尋』、『查資料』、『解釋某個他不認識的名詞』？\n"
-                        "如果是，請只回答 'YES'；如果沒有這個意圖，請只回答 'NO'。絕對不要解釋。"
-                    )
-                },
-                {"role": "user", "content": user_prompt}
-            ]
-            
-            try:
-                # 瞬間調用後台模型池判定
-                search_decision = await fetch_background_decision(search_intent_prompt)
-                if search_decision and "YES" in search_decision.upper():
-                    print(f"【🌐 AI 意圖探針】判定使用者需要查資料！啟動搜尋...")
-                    search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
-                    is_explicit_search = True
-            except Exception as e:
-                # 🛡️ 斷網保底：退回傳統關鍵字
-                search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下", "google"]
-                if any(kw in user_prompt for kw in search_keywords):
-                    search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=True))
-                    is_explicit_search = True
-
         formatted_prompt = (
             f"【對妳發言】顯示暱稱：{user_nick} | 帳號ID：{user_id_name} | 標記此人的代碼：{user_mention_code}\n"
             f"訊息內容：「{user_prompt}」"
@@ -868,7 +749,6 @@ async def on_message(message):
             for attachment in message.attachments:
                 c_type = (attachment.content_type or "").lower()
                 filename = attachment.filename.lower()
-                
                 is_image = "image" in c_type or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"])
                 
                 if is_image:
@@ -876,7 +756,6 @@ async def on_message(message):
                         img_bytes = await attachment.read()
                         base64_img = base64.b64encode(img_bytes).decode('utf-8')
                         final_ctype = c_type if "image" in c_type else "image/png"
-                        
                         content_payload.append({
                             "type": "image_url",
                             "image_url": {"url": f"data:{final_ctype};base64,{base64_img}"}
@@ -904,8 +783,9 @@ async def on_message(message):
 
         messages = [{"role": "system", "content": dynamic_system_setting}] + history + [immediate_user_msg]
         
-        # 取得第一句回覆
-        bot_reply = await fetch_ai_response(messages, require_vision=has_media)
+        # 🚀 顯示「正在輸入中」，安撫體感，並取得第一句直覺回覆 (0 阻塞！)
+        async with message.channel.typing():
+            bot_reply = await fetch_ai_response(messages, require_vision=has_media)
 
         if bot_reply is None:
             await message.reply("（角色暫時登出中，請稍後再試...）", allowed_mentions=smart_mentions)
@@ -943,25 +823,22 @@ async def on_message(message):
         bot_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
         bot_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
         bot_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", bot_reply, flags=re.IGNORECASE).strip()
-        
-        # 🛡️ 防呆：如果 AI 只輸出了標籤導致被抹除變空字串，補上一句動作防止報錯
-        if not bot_reply: 
-            bot_reply = "（默默看著你）"
+        if not bot_reply: bot_reply = "（默默看著你）"
 
-        # ✨【時空防禦優化】更新本地快取記憶前，重新抓取最新的 Live 快取，避免非同步思考期間被覆蓋
+        # ✨ 更新本地快取記憶
         live_history = HIPPOCAMPUS_CACHE.get(channel_id, history)
         live_history.append(history_user_msg)
         live_history.append({"role": "assistant", "content": bot_reply})
         if len(live_history) > 50: live_history = live_history[-50:]
         HIPPOCAMPUS_CACHE[channel_id] = live_history
 
-        # 🚀 先讓 7L 直接秒回第一句
+        # 🚀 先讓 7L 直接秒回第一句！(System 1 反射神經)
         await message.reply(bot_reply, allowed_mentions=smart_mentions)
 
-        # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話（完全模擬人類連發習慣，🤖 核心優化 6：機器人互動時不執行連發） ───
+        # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話 ───
         if ai_next_sentence and not message.author.bot:
             print(f"【✨ 自由連發】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence}")
-            await asyncio.sleep(1.8) # ⏳ 貼心模擬 1.8 秒的打字延遲，讓互動更像真人
+            await asyncio.sleep(1.8) 
             
             current_history = HIPPOCAMPUS_CACHE.get(channel_id, live_history)
             current_history.append({"role": "assistant", "content": ai_next_sentence})
@@ -969,114 +846,139 @@ async def on_message(message):
             HIPPOCAMPUS_CACHE[channel_id] = current_history
             
             await message.channel.send(ai_next_sentence, allowed_mentions=smart_mentions)
-            await save_to_long_term_memory(channel_id, current_history)
+            live_history = current_history
 
-        # ─── ⚡ 不懂裝懂的智慧背景開智 (改用 AI 意圖分析) ───
-        is_confused = False
-        if bot_reply:
-            confused_intent_prompt = [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一個意圖分析器。以下是 AI 機器人剛剛做出的回覆。\n"
-                        "請判斷這段回覆是否表現出『不知道』、『不懂』、『沒聽過』、『疑惑』或『缺乏相關知識』？\n"
-                        "如果是，請只回答 'YES'；如果他表現得很清楚知道，請只回答 'NO'。"
-                    )
-                },
-                {"role": "user", "content": bot_reply}
-            ]
-            
+        # ========================================================
+        # 🧠 第二系統：獨立運作的「背景深層大腦」 (不再卡住前台回覆！)
+        # ========================================================
+        async def background_deep_thinking(user_msg, bot_first_reply, current_history, cid):
             try:
-                confused_decision = await fetch_background_decision(confused_intent_prompt)
-                if confused_decision and "YES" in confused_decision.upper():
-                    is_confused = True
-                    print(f"【🧠 AI 開智判定】發現 7L 剛剛的回覆表現出不懂，啟動背景補救！")
-            except Exception:
-                # 🛡️ 斷網保底：退回傳統關鍵字
-                confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
-                is_confused = any(kw in bot_reply for kw in confusion_keywords)
-                
-        # 💡 優化（🤖 核心優化 7：只有當對方是真人時，才跑原本的背景探針補救，防範機器人聊天起衝突）
-        if not message.author.bot and not ai_next_sentence and (is_explicit_search or is_confused):
-            if is_confused and not is_explicit_search:
-                print(f"【🔍 觸發補救】7L 發現自己不懂，正在背景偷偷查：{user_prompt}")
-                search_task = asyncio.create_task(search_internet_meme(user_prompt, is_explicit=False))
+                if message.author.bot:
+                    # 如果對方是機器人，不浪費資源做深層思考，但仍需存檔
+                    await save_to_long_term_memory(cid, current_history)
+                    return
 
-            async def background_enlightenment(task, is_remedy):
-                try:
-                    if not task: return
-                    web_knowledge = await task
-                    if not web_knowledge or "網路訊號不佳" in web_knowledge:
-                        return
-                        
-                    brain_insight = f"（🧠 7L 的雲端大腦聯想補完：關於剛才的「{user_prompt}」，網路上的真實意思是：\n{web_knowledge}）"
+                deep_thoughts = []
+                msg_lower = user_msg.lower()
+                
+                # 1. 準備背景意圖分析提示詞
+                memory_prompt = [{"role": "system", "content": "意圖分析：使用者是否暗示想回憶過去、詢問以前的事或延續舊話題？(YES/NO)"}, {"role": "user", "content": user_msg}]
+                search_prompt = [{"role": "system", "content": "意圖分析：使用者是否暗示需要上網搜尋、查資料或解釋名詞？(YES/NO)"}, {"role": "user", "content": user_msg}]
+                confused_prompt = [{"role": "system", "content": "意圖分析：以下 AI 的回覆是否表現出『不知道』、『不懂』、『疑惑』或『缺乏相關知識』？(YES/NO)"}, {"role": "user", "content": bot_first_reply}]
+                
+                # 2. ⚡ 平行運算：同時問後台小腦這三件事，極速判定！
+                mem_decision, search_decision, confused_decision = await asyncio.gather(
+                    fetch_background_decision(memory_prompt),
+                    fetch_background_decision(search_prompt),
+                    fetch_background_decision(confused_prompt)
+                )
+
+                # 3. 📓 【任務 A：翻閱雲端日記】
+                need_deep_recall = False
+                if mem_decision and "YES" in mem_decision.upper():
+                    need_deep_recall = True
+                else:
+                    nostalgia_triggers = ["上次", "之前", "那天", "記得", "回憶", "日記", "歷史", "過去", "前天", "昨天"]
+                    if any(trigger in msg_lower for trigger in nostalgia_triggers):
+                        need_deep_recall = True
+
+                if need_deep_recall:
+                    print(f"【🧠 背景大腦】判定需要深層回憶！去翻閱頻道 {cid} 的雲端舊日記...")
+                    from datetime import timedelta
+                    tz = ZoneInfo("Asia/Taipei")
+                    now = datetime.now(tz)
+                    dates_to_fetch = []
                     
-                    current_history = HIPPOCAMPUS_CACHE.get(channel_id, live_history)
-                    current_history.append({"role": "user", "content": f"（系統記憶注入：{brain_insight}）"})
+                    if "昨天" in msg_lower: dates_to_fetch.append((now - timedelta(days=1)).strftime("%Y-%m-%d"))
+                    elif "前天" in msg_lower: dates_to_fetch.append((now - timedelta(days=2)).strftime("%Y-%m-%d"))
+                    else:
+                        dates_to_fetch.append(now.strftime("%Y-%m-%d"))
+                        dates_to_fetch.append((now - timedelta(days=1)).strftime("%Y-%m-%d"))
                     
-                    print(f"【🔮 頓悟連發】7L 查到新知識了，正在組織第二句反擊...")
+                    dates_to_fetch = sorted(list(set(dates_to_fetch)))
+                    compiled_diaries = []
+                    for d_str in dates_to_fetch:
+                        diary_ref = db.collection("daily_diary").document(d_str)
+                        diary_doc = await diary_ref.get()
+                        if diary_doc.exists:
+                            channel_diary = diary_doc.to_dict().get("summaries", {}).get(str(cid), "")
+                            if channel_diary: compiled_diaries.append(f"[{d_str}] {channel_diary}")
                     
-                    if is_remedy:
+                    if compiled_diaries:
+                        diary_content = "\n".join(compiled_diaries)
+                        deep_thoughts.append(f"（妳突然回憶起過去的事：\n{diary_content}）")
+
+                # 4. 🌐 【任務 B：上網查資料 / 開智補救】
+                need_search = (search_decision and "YES" in search_decision.upper())
+                is_confused = (confused_decision and "YES" in confused_decision.upper())
+                
+                # 保底關鍵字
+                search_keywords = ["查一下", "幫我查", "搜尋", "是什麼", "什麼是", "查查", "搜一下", "google"]
+                if not need_search and any(kw in user_msg for kw in search_keywords): need_search = True
+                confusion_keywords = ["不知道", "不懂", "什麼意思", "那是什麼", "蛤", "沒聽過", "是啥", "怎解", "供三小", "哪位", "怎麼可能"]
+                if not is_confused and any(kw in bot_first_reply for kw in confusion_keywords): is_confused = True
+
+                if need_search or is_confused:
+                    print(f"【🌐 背景大腦】判定需要查資料 (搜尋:{need_search}, 疑惑:{is_confused})，啟動網路搜尋...")
+                    web_knowledge = await search_internet_meme(user_msg, is_explicit=need_search) 
+                    if web_knowledge and "網路訊號不佳" not in web_knowledge:
+                        deep_thoughts.append(f"（妳剛剛偷偷上網查到的真實資料：\n{web_knowledge}）")
+                
+                # 5. ✨ 頓悟時刻：如果在背景查到了任何東西，主動跳出來發第二句話補充！
+                if deep_thoughts:
+                    print("【💡 頓悟連發】7L 查完資料/翻完日記了，準備主動補充說明！")
+                    
+                    insight_text = "\n".join(deep_thoughts)
+                    # 抓取最新快取，避免被其他人插話洗掉
+                    latest_history = HIPPOCAMPUS_CACHE.get(cid, current_history)
+                    latest_history.append({"role": "system", "content": f"【背景大腦更新】：\n{insight_text}"})
+                    
+                    if is_confused and not need_search:
                         follow_up_prompt = (
-                            f"【系統提示】妳剛剛回覆對方時表現出不懂（妳回了：「{bot_reply}」）。"
-                            f"但妳偷偷上網查到了新知識：{brain_insight}。"
+                            f"【系統提示】妳剛剛回覆對方時表現出不懂（妳回了：「{bot_first_reply}」）。"
+                            f"但妳偷偷上網查到或回憶起了新知識：\n{insight_text}\n"
                             f"請傲嬌地傳第二則短訊息，假裝妳其實知道、恍然大悟或轉移話題掩飾尷尬。"
-                            f"字數限制在 1 句話內，絕對禁止出現括號或後台提示字眼！"
+                            f"字數限制 1~3 句話，絕對禁止出現括號或後台提示字眼！"
                         )
                     else:
                         follow_up_prompt = (
-                            f"【系統提示】妳剛剛先秒回了對方（妳回了：「{bot_reply}」）。"
-                            f"現在妳幫他查到詳細資料了：{brain_insight}。"
-                            f"請傲嬌地把這個答案告訴他，順便吐槽他怎麼連這個都不懂。"
-                            f"字數限制在 1~2 句話之內，絕對禁止出現括號或後台提示字眼！"
+                            f"【系統提示】妳剛剛已經先回覆了對方（妳回了：「{bot_first_reply}」）。\n"
+                            f"但在回覆之後，妳的大腦剛剛在背景想起了舊記憶或查到了新資料：\n{insight_text}\n"
+                            f"請根據妳傲嬌的性格，主動傳送『第二句話』來補充說明、恍然大悟或是吐槽對方。\n"
+                            f"例如：『啊對了我想起來了...』或『順帶一提，我剛剛偷偷查了一下...』\n"
+                            f"字數限制在 1~3 句話內，絕對禁止出現括號或後台提示字眼！"
                         )
-                        
-                    second_messages = [{"role": "system", "content": dynamic_system_setting}] + current_history + [{"role": "user", "content": follow_up_prompt}]
-                    second_reply = await fetch_ai_response(second_messages)
                     
+                    second_messages = [{"role": "system", "content": dynamic_system_setting}] + latest_history + [{"role": "user", "content": follow_up_prompt}]
+                    
+                    # 呼叫主力前台大腦生成第二句話
+                    second_reply = await fetch_ai_response(second_messages)
                     if second_reply:
-                        match2 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", second_reply, re.IGNORECASE)
-                        imp_match2 = re.search(r"\|\|NEW_IMPRESSION:\s*([\s\S]*?)\s*\|\|", second_reply, re.IGNORECASE)
-                        
-                        new_nickname2 = match2.group(1).strip() if match2 else None
-                        new_impression2 = imp_match2.group(1).strip() if imp_match2 else None
-                        
-                        if new_nickname2 or new_impression2:
-                            final_name2 = new_nickname2 if new_nickname2 and new_nickname2 != current_custom_name else None
-                            final_imp2 = new_impression2 if new_impression2 and new_impression2 != current_impression else None
-                            
-                            if final_name2 or final_imp2:
-                                await save_user_profile(
-                                    user_id=user_id,
-                                    username=message.author.name,
-                                    display_name=message.author.display_name,
-                                    custom_name=final_name2,
-                                    impression=final_imp2
-                                )
-                        
-                        # 🚨【核心安全鎖】背景開智輸出前，全面雙重抹除所有標籤，絕不穿幫
+                        # 清洗標籤
                         second_reply = re.sub(r"\|\|NEW_NAME:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
                         second_reply = re.sub(r"\|\|CONTINUE_MESSAGE:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
                         second_reply = re.sub(r"\|\|NEW_IMPRESSION:[\s\S]*?\|\|", "", second_reply, flags=re.IGNORECASE).strip()
+                        if not second_reply: second_reply = "原來如此..."
                         
-                        # 🛡️ 防呆：防止被抹成空字串
-                        if not second_reply:
-                            second_reply = "原來如此..."
-
-                        current_history = HIPPOCAMPUS_CACHE.get(channel_id, current_history)
-                        current_history.append({"role": "assistant", "content": second_reply})
-                        if len(current_history) > 50: current_history = current_history[-50:]
-                        HIPPOCAMPUS_CACHE[channel_id] = current_history
+                        await asyncio.sleep(2.5) # 假裝打字思考的時間，讓她看起來像真人突然想到
+                        
+                        latest_history.append({"role": "assistant", "content": second_reply})
+                        if len(latest_history) > 50: latest_history = latest_history[-50:]
+                        HIPPOCAMPUS_CACHE[cid] = latest_history
                         
                         await message.channel.send(second_reply, allowed_mentions=smart_mentions)
-                
-                    await save_to_long_term_memory(channel_id, current_history)
-                    print(f"【💾 雲端開智成功】7L 已經徹底記住這個知識並完成備份。")
-                    
-                except Exception as e:
-                    print(f"【⚠️ 背景開智失敗】: {e}")
+                        current_history = latest_history
 
-            asyncio.create_task(background_enlightenment(search_task, is_remedy=is_confused))
+                # 6. 💾 任務完成：將包含最新對話與頓悟的內容存入雲端
+                await save_to_long_term_memory(cid, current_history)
+            
+            except Exception as e:
+                print(f"【⚠️ 背景大腦運作失敗】: {e}")
+                # 就算背景任務失敗，也要保證基本對話有存入雲端
+                await save_to_long_term_memory(cid, current_history)
+
+        # 🚀 啟動背景大腦（Fire and Forget，不卡住主程式）
+        asyncio.create_task(background_deep_thinking(user_prompt, bot_reply, live_history, channel_id))
 
     # ── 情況 B：純文字群聊旁聽（🧠 由後台免費小模型進行判定分工） ──
     else:
@@ -1201,13 +1103,15 @@ async def on_message(message):
 
 
 # ────────────────────────────────────────────────────────
-# 6. 🧠 後台對話決策核心（負責「沉默判定」與背景盲測 - OR + Groq + Gemini 三軌完全體）
+# 6. 🧠 後台對話決策核心（負責「沉默判定」與背景意圖分析 - OR + Groq + Gemini 三軌完全體）
 # ────────────────────────────────────────────────────────
 
-
-
-async def fetch_background_decision(messages):
-    """專門負責後台『旁聽判定』，優先順序：OpenRouter 免費池 -> Groq 備援 -> Gemini 輕量防線"""
+async def fetch_background_decision(messages, temperature=0.1, max_tokens=50):
+    """
+    專門負責後台『旁聽判定與意圖分析』。
+    優先順序：OpenRouter 免費池 -> Gemini 輕量防線 -> Groq 備援
+    強制低溫度與低 Token 消耗，追求極致速度。
+    """
     global current_or_idx, OPENROUTER_KEY_COOLDOWNS
     global current_groq_idx, GROQ_KEY_COOLDOWNS
     global current_gemini_idx, GEMINI_KEY_COOLDOWNS
@@ -1256,7 +1160,7 @@ async def fetch_background_decision(messages):
     else:
         ordered_gemini_keys = []
 
-    # 🛠️ 建立三軌混合後台模型池 (嚴格排序：OpenRouter -> Groq -> Gemini)
+    # 🛠️ 建立三軌混合後台模型池 (嚴格排序：OpenRouter -> Gemini -> Groq)
     BACKGROUND_POOLS = []
     
     # 🌟 【第一梯隊：OpenRouter 100% 全免費高強度小模型】
@@ -1272,6 +1176,9 @@ async def fetch_background_decision(messages):
     # 🚀 【第三梯隊：Groq 火力全開極速防線】
     for client in ordered_clients: 
         BACKGROUND_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
+
+    # ⏱️ 設定背景任務專用短超時限制 (防止卡死)
+    req_timeout = aiohttp.ClientTimeout(total=8.0)
 
     # 巡航調用模型
     for item in BACKGROUND_POOLS:
@@ -1301,9 +1208,10 @@ async def fetch_background_decision(messages):
                 print(f"【🧠 後台決策】嘗試使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+                payload = {"model": model_name, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
                 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                async with aiohttp.ClientSession(timeout=req_timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
@@ -1314,18 +1222,24 @@ async def fetch_background_decision(messages):
                             
             elif provider == "groq":
                 key_index = GROQ_CLIENTS.index(target_client) + 1
-                print(f"【🧠 後台決策 💥 備援觸發】OpenRouter 已失效，轉向 Groq {model_name} (第 {key_index} 組金鑰)...")
-                chat_completion = await target_client.chat.completions.create(messages=messages, model=model_name)
+                print(f"【🧠 後台決策 💥 備援觸發】轉向 Groq {model_name} (第 {key_index} 組金鑰)...")
+                chat_completion = await target_client.chat.completions.create(
+                    messages=messages, 
+                    model=model_name, 
+                    temperature=temperature, 
+                    max_tokens=max_tokens,
+                    timeout=8.0  # Groq client 端設定超時
+                )
                 return chat_completion.choices[0].message.content
 
             elif provider == "gemini":
-                print(f"【🧠 後台決策 🛡️ 終極防線】OR 與 Groq 已打光，啟用 Gemini {model_name} (第 {key_idx+1} 組金鑰)...")
-                # 💡 使用 Google 官方的 OpenAI 相容端點，省去複雜的角色格式轉換成本
+                print(f"【🧠 後台決策 🛡️ 輕量防線】啟用 Gemini {model_name} (第 {key_idx+1} 組金鑰)...")
                 url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
+                payload = {"model": model_name, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
                 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json={"model": model_name, "messages": messages}, headers=headers) as resp:
+                async with aiohttp.ClientSession(timeout=req_timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             return data["choices"][0]["message"]["content"]
@@ -1336,7 +1250,7 @@ async def fetch_background_decision(messages):
                         
         except Exception as e:
             error_msg = str(e)
-            print(f"【⚠️ 後台切換】{provider} 的 {model_name} 發生錯誤，正滑動至下一組...")
+            print(f"【⚠️ 後台切換】{provider} 的 {model_name} 發生錯誤或超時，正滑動至下一組...")
             
             # ─── 🛠️ 萬用全動態冷卻時間解析核心 ───
             total_seconds = 60.0  # 保險預設值
@@ -1363,16 +1277,16 @@ async def fetch_background_decision(messages):
             if "429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower():
                 if provider == "openrouter":
                     OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 OpenRouter 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 OR {model_name} 觸發上限，封印 {total_seconds:.1f} 秒。")
                 elif provider == "groq":
                     GROQ_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                    print(f"【🛑 封印模型(後台)】第 {k_idx} 組 Groq 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    print(f"【🛑 封印模型(後台)】第 {k_idx} 組 Groq {model_name} 觸發上限，封印 {total_seconds:.1f} 秒。")
                 elif provider == "gemini":
                     GEMINI_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 Gemini 的 {model_name} 觸發上限，精準動態封印 {total_seconds:.1f} 秒。")
+                    print(f"【🛑 封印模型(後台)】第 {key_idx+1} 組 Gemini {model_name} 觸發上限，封印 {total_seconds:.1f} 秒。")
             continue
 
-    return "沉默"
+    return ""
 
 # ────────────────────────────────────────────────────────
 # 7. 🧠 前台主對話核心（主力重裝大腦 + 全動態冷卻完全體）
@@ -1438,7 +1352,9 @@ async def fetch_ai_response(messages, require_vision=False):
         print("【🚨 Gemini 大赦】所有 Gemini 金鑰皆在冷卻中，強制啟動集體釋放防當機制！")
         ordered_gemini_keys = list(enumerate(GEMINI_KEYS))
     
+    # ==========================================
     # 🧠 動態產生混合大腦模型池 (排序：優先頂級大腦 -> 再到免費小模型)
+    # ==========================================
     DYNAMIC_MODEL_POOLS = []
     
     # 🌟 【第一梯隊：頂級大腦】
@@ -1480,6 +1396,9 @@ async def fetch_ai_response(messages, require_vision=False):
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "openrouter/free"})
 
+    # ⏱️ 設置前台專用超時 (避免 API 伺服器掛掉時無限等待)
+    req_timeout = aiohttp.ClientTimeout(total=15.0)
+
     # 🚀 開始依序呼叫大腦
     for item in DYNAMIC_MODEL_POOLS:
         provider = item["provider"]
@@ -1489,7 +1408,7 @@ async def fetch_ai_response(messages, require_vision=False):
         
         loop_now = time.time()
         
-        # 🛡️ 【重點升級】專屬鎖定：格式為 "金鑰索引_模型名稱"，不同模型互不干擾！
+        # 🛡️ 專屬鎖定：格式為 "金鑰索引_模型名稱"，不同模型互不干擾！
         if provider == "groq" and target_client:
             k_idx = GROQ_CLIENTS.index(target_client) + 1  
             lock_key = f"{k_idx}_{model_name}"
@@ -1524,9 +1443,15 @@ async def fetch_ai_response(messages, require_vision=False):
             if provider == "groq":
                 key_index = GROQ_CLIENTS.index(target_client) + 1  
                 print(f"【🧠 嘗試】使用 Groq {model_name} (第 {key_index} 組金鑰)...")
-                chat_completion = await target_client.chat.completions.create(messages=current_messages, model=model_name)
-                return chat_completion.choices[0].message.content
-# 1529!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!                
+                # 加上 timeout 防止 Groq 靜默卡死
+                chat_completion = await target_client.chat.completions.create(
+                    messages=current_messages, 
+                    model=model_name,
+                    timeout=15.0 
+                )
+                if chat_completion.choices[0].message.content:
+                    return chat_completion.choices[0].message.content
+                
             elif provider == "gemini":
                 target_key = item.get("key")
                 g_idx = item.get("key_idx")
@@ -1535,7 +1460,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 print(f"【🧠 嘗試】使用 Gemini 模型 {model_name} (第 {g_idx+1} 組金鑰)...")
                 url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(timeout=req_timeout) as session:
                     async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
@@ -1553,7 +1478,7 @@ async def fetch_ai_response(messages, require_vision=False):
                 print(f"【🧠 嘗試】使用 OpenRouter {model_name} (第 {key_idx+1} 組金鑰)...")
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {target_key}", "Content-Type": "application/json"}
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(timeout=req_timeout) as session:
                     async with session.post(url, json={"model": model_name, "messages": current_messages}, headers=headers) as resp:
                         if resp.status == 200:
                             data = await resp.json()
@@ -1565,7 +1490,7 @@ async def fetch_ai_response(messages, require_vision=False):
                             
         except Exception as e:
             error_msg = str(e)
-            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤。直接切換...")
+            print(f"【⚠️ 備援切換】{provider} 的 {model_name} 發生錯誤或超時。直接切換...")
             
             total_seconds = 60.0  # 保險預設值
 
@@ -1588,30 +1513,29 @@ async def fetch_ai_response(messages, require_vision=False):
             
             total_seconds = max(5.0, total_seconds + 5)
             
-            if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower()):
+            if provider == "groq" and ("429" in error_msg or "rate limit" in error_msg.lower() or "timeout" in error_msg.lower()):
                 k_idx = GROQ_CLIENTS.index(target_client) + 1  
                 lock_key = f"{k_idx}_{model_name}"
                 GROQ_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                print(f"【🛑 精準封印】第 {k_idx} 組 Groq 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
+                print(f"【🛑 精準封印】第 {k_idx} 組 Groq 的「{model_name}」觸發上限或超時，封印 {total_seconds:.1f} 秒。")
 
-            elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower()):
+            elif provider == "openrouter" and ("429" in error_msg or "rate limit" in error_msg.lower() or "timeout" in error_msg.lower()):
                 key_idx = item.get("key_idx")
                 lock_key = f"{key_idx}_{model_name}"
                 OPENROUTER_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                print(f"【🛑 精準封印】第 {key_idx+1} 組 OpenRouter 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
+                print(f"【🛑 精準封印】第 {key_idx+1} 組 OpenRouter 的「{model_name}」觸發上限或超時，封印 {total_seconds:.1f} 秒。")
                 
-            elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower()):
+            elif provider == "gemini" and ("429" in error_msg or "rate limit" in error_msg.lower() or "http 429" in error_msg.lower() or "timeout" in error_msg.lower()):
                 g_idx = item.get("key_idx")
                 if g_idx is not None:
                     lock_key = f"{g_idx}_{model_name}"
                     GEMINI_KEY_COOLDOWNS[lock_key] = time.time() + total_seconds
-                    print(f"【🛑 精準封印】第 {g_idx+1} 組 Gemini 的「{model_name}」觸發上限，封印 {total_seconds:.1f} 秒。")
+                    print(f"【🛑 精準封印】第 {g_idx+1} 組 Gemini 的「{model_name}」觸發上限或超時，封印 {total_seconds:.1f} 秒。")
 
             continue 
 
     # ────────────────────────────────────────────────────────
     # 💤 終極降級隔離防線：主線大腦模型池（DYNAMIC_MODEL_POOLS）全數癱瘓！
-    # 🎯 單獨調用完全獨立的 Groq 輕量小模型 (llama-3.1-8b-instant) 動態生成夢話
     # ────────────────────────────────────────────────────────
     print("【💤 喚醒隔離腦核】前台主線模型池全數癱瘓！單獨調用應急專用小模型...")
     
@@ -1631,42 +1555,31 @@ async def fetch_ai_response(messages, require_vision=False):
         }
     ]
     
-    # 🛠️ 專門用來跑這邊的應急小模型（規格：560 T/s、消耗極低，未包含在任何主流池中）
+    # 🛠️ 專門用來跑這邊的應急小模型
     EMERGENCY_SMALL_MODEL = "llama-3.1-8b-instant"
     
-    # ⚡ 直接穿透！輪詢註冊的 Groq 客戶端陣列
     if GROQ_CLIENTS:
         for idx, client in enumerate(GROQ_CLIENTS, start=1):
-            if client is None:
-                continue
+            if client is None: continue
             try:
-                # 💡 無視 COOLDOWNS 字典，限制 max_tokens=120 讓它一瞬間吐出想睡覺的夢話
                 chat_completion = await client.chat.completions.create(
                     messages=emergency_prompt, 
                     model=EMERGENCY_SMALL_MODEL, 
-                    temperature=0.98,  # 高隨機度，讓每次碎碎念都不一樣
-                    max_tokens=120     # 短句輸出，秒回傳
+                    temperature=0.98,  
+                    max_tokens=120,
+                    timeout=10.0 # 應急也必須有超時
                 )
-                
                 if chat_completion.choices[0].message.content:
-                    print(f"【🎉 隔離線路救場成功】由第 {idx} 組 Groq 金鑰的專屬應急小模型 [{EMERGENCY_SMALL_MODEL}] 成功生成夢話！")
+                    print(f"【🎉 隔離線路救場成功】由第 {idx} 組 Groq 金鑰的小模型 [{EMERGENCY_SMALL_MODEL}] 成功生成夢話！")
                     return chat_completion.choices[0].message.content
             except Exception as e:
-                print(f"【⚠️ 應急卡住】隔離線路第 {idx} 組 Groq 小模型也裝死，嘗試下一組... 錯誤: {e}")
+                print(f"【⚠️ 應急卡住】隔離線路第 {idx} 組 Groq 小模型也裝死，錯誤: {e}")
                 continue
 
     # ─── 🛑 超級無敵終極天災保底線 ───
-    # 如果連完全隔開的 8B 小模型都全滅
-    print("【🚨 終極災難】所有模型全滅且斷線，啟動防禦性全機斷電！")
-    
-    # 💡 必須主動在該頻道發送（假設此處抓得到 channel 或 ctx）
-    try:
-        await channel.send("（……連最後一絲隔開的應急小模型都斷電了……睡著）💤……")
-    except Exception:
-        pass # 如果是徹底斷網，發不出去就直接算了
-        
-    await bot.close()
-    os._exit(0)  # 真正強制拔插頭
+    print("【🚨 終極災難】所有模型全滅且斷線，回傳最終沉睡代碼。")
+    # 修正原本會觸發 NameError (channel is not defined) 的問題，直接回傳給 on_message 處理
+    return "（……連最後一絲隔開的應急小模型都斷電了……睡著）💤……"
 
 ## ─── 🛑 超級無敵終極天災保底線 ───
 #    # 如果連完全隔開的 8B 小模型都全滅（例如徹底斷網、或 Groq 伺服器集體大崩潰）
