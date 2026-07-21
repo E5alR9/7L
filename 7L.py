@@ -12,6 +12,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from discord.ext import commands, tasks
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
+
+# 1. 自動讀取同目錄下的 .env 檔案
+load_dotenv()
+
 
 # 用於影片關鍵影格抽樣
 try:
