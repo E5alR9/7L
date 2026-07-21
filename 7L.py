@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 # 1. 自動讀取同目錄下的 .env 檔案
-load_dotenv("")
+load_dotenv()
 
 
 # 用於影片關鍵影格抽樣
