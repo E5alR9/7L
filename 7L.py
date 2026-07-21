@@ -1368,12 +1368,9 @@ async def fetch_ai_response(messages, require_vision=False):
     # 🌟 【第一梯隊：頂級大腦】
     for client in ordered_clients: 
         DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "llama-3.3-70b-versatile"})
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})
     for client in ordered_clients: 
         DYNAMIC_MODEL_POOLS.append({"provider": "groq", "client": client, "model": "openai/gpt-oss-120b"})
-    for idx, key in ordered_or_keys: 
-        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
+    
         
     # 🧱 【第二梯隊：Gemini 多模態神經網路家族 (全部自帶圖片解析能力)】
     # 1. 綜合最強主力：Gemini 3.5 Flash (目前最聰明且穩定的前沿模型)
@@ -1393,6 +1390,10 @@ async def fetch_ai_response(messages, require_vision=False):
         DYNAMIC_MODEL_POOLS.append({"provider": "gemini", "key_idx": idx, "key": key, "model": "gemini-2.5-flash-lite", "vision": True})
 
     # 💡 OpenRouter 100% 全免費高強度小模型矩陣防線
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "meta-llama/llama-3.3-70b-instruct:free"})    
+    for idx, key in ordered_or_keys: 
+        DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "qwen/qwen-2.5-72b-instruct:free"})
     for idx, key in ordered_or_keys: 
         DYNAMIC_MODEL_POOLS.append({"provider": "openrouter", "key_idx": idx, "key": key, "model": "google/gemma-3-27b-it:free"})
     for idx, key in ordered_or_keys: 
