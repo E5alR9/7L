@@ -846,7 +846,6 @@ async def on_message(message):
         # ─── ⚡ 執行：由 AI 靈魂自行決定的下一句話 ───
         if ai_next_sentence and not message.author.bot:
             print(f"【✨ 自由連發】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence}")
-             
             
             current_history = HIPPOCAMPUS_CACHE.get(channel_id, live_history)
             current_history.append({"role": "assistant", "content": ai_next_sentence})
@@ -1037,7 +1036,7 @@ async def on_message(message):
                         bot_reply = await fetch_ai_response(actual_messages)
                         
                         if bot_reply:
-                            # 提取新暱稱與新印象 (✨ 修正 2：補上原本遺漏的暱稱與印象雙重提取)
+                            # 提取新暱稱與新印象 (✨ 雙重提取)
                             match3 = re.search(r"\|\|NEW_NAME:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
                             imp_match3 = re.search(r"\|\|NEW_IMPRESSION:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
                             
@@ -1059,7 +1058,7 @@ async def on_message(message):
                                     if final_name3: print(f"🧬【大腦進化-插話】7L 將 {message.author.display_name} 的稱呼修改為：{final_name3}")
                                     if final_imp3: print(f"🧬【大腦進化-插話】7L 將 {message.author.display_name} 的印象更新為：{final_imp3}")
                             
-                            # ─── 💬 自由意志：自主插話時也完整支援 AI 連發下一句話的設定 (✨ 修正 3) ───
+                            # ─── 💬 自由意志：自主插話時也完整支援 AI 連發下一句話的設定 ───
                             ai_next_sentence3 = None
                             continue_match3 = re.search(r"\|\|CONTINUE_MESSAGE:\s*([\s\S]*?)\s*\|\|", bot_reply, re.IGNORECASE)
                             if continue_match3:
@@ -1086,7 +1085,6 @@ async def on_message(message):
                             # ✨ 執行插話時的自由意志連發：追加打字延遲與快取同步
                             if ai_next_sentence3:
                                 print(f"【✨ 自由連發-插話】7L 自己靈魂覺醒，強烈決定追加下一句話：{ai_next_sentence3}")
-                                
                                 
                                 current_history = HIPPOCAMPUS_CACHE.get(channel_id, final_history)
                                 current_history.append({"role": "assistant", "content": ai_next_sentence3})
